@@ -11,6 +11,7 @@ srcs += \
   race/helgrind.cc \
   race/thread_sanitizer.cc \
   race/fast_track.cc \
+  race/literace.cc \
   race/loft.cc \
   race/acculock.cc \
   race/multilock_hb.cc \
@@ -26,7 +27,8 @@ pintools += \
 
 race_profiler_objs := \
   race/detector.o \
-  race/eraser.o \
+  race/djit.o \
+  race/literace.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \
@@ -41,6 +43,7 @@ race_objs := \
   race/helgrind.o \
   race/thread_sanitizer.o \
   race/fast_track.o \
+  race/literace.o \
   race/acculock.o \
   race/multilock_hb.o \
   race/loft.o \

@@ -82,11 +82,10 @@ void ExecutionControl::PostSetup()
 	}
 }
 
-
-uint32 trace_count=0;
-uint32 bbl_count=0;
-int jmp;
-bool flag=false;
+// uint32 trace_count=0;
+// uint32 bbl_count=0;
+// int jmp;
+// bool flag=false;
 
 void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v) 
 {
@@ -98,7 +97,7 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 		return ;
 	}
 
-	{
+	/*{
 		
 		IMG img=GetImgByTrace(trace);
 		RTN rtn=TRACE_Rtn(trace);
@@ -128,9 +127,8 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 				}
 			}
 		}
-	}
+	}*/
 	
-
 	for(BBL bbl=TRACE_BblHead(trace);BBL_Valid(bbl);bbl=BBL_Next(bbl)) {
 		//Get the corresponding img of this trace.
 		IMG img=GetImgByTrace(trace);
@@ -397,8 +395,8 @@ void ExecutionControl::ProgramStart()
 void ExecutionControl::ProgramExit(INT32 code,VOID *v)
 {
 	HandleProgramExit();
-	INFO_FMT_PRINT("trace_count:%u\n",trace_count);
-	INFO_FMT_PRINT("bbl_count:%u\n",bbl_count);
+	// INFO_FMT_PRINT("trace_count:%u\n",trace_count);
+	// INFO_FMT_PRINT("bbl_count:%u\n",bbl_count);
 	//save static info
 	sinfo_->Save(knob_->ValueStr("sinfo_out"));
 

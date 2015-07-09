@@ -27,7 +27,7 @@ void Djit::Setup(Mutex *lock,RaceDB *race_db)
 	track_racy_inst_=knob_->ValueBool("track_racy_inst");
 }
 
-Djit::Meta *Djit::GetMeta(address_t iaddr)
+Detector::Meta *Djit::GetMeta(address_t iaddr)
 {
 	Meta::Table::iterator it=meta_table_.find(iaddr);
 	if(it==meta_table_.end()) {

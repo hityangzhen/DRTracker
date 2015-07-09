@@ -39,10 +39,10 @@ protected:
 	};
 
 	//override virtual function
-	Meta *GetMeta(address_t iaddr);
-	void ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst);
-	void ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst);
-	void ProcessFree(Meta *meta);
+	virtual Meta *GetMeta(address_t iaddr);
+	virtual void ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst);
+	virtual void ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst);
+	virtual void ProcessFree(Meta *meta);
 	//whether to track the racy inst
 	bool track_racy_inst_;
 private:

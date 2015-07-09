@@ -18,12 +18,6 @@ bool Loft::Enabled()
 	return knob_->ValueBool("enable_loft");
 }
 
-void Loft::Setup(Mutex *lock,RaceDB *race_db)
-{
-	FastTrack::Setup(lock,race_db);
-	track_racy_inst_=knob_->ValueBool("track_racy_inst");
-}
-
 void Loft::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 	Inst *inst,address_t addr)
 {

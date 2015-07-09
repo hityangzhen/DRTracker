@@ -13,8 +13,8 @@ void Profiler::HandlePreSetup()
 	// djit_analyzer_=new Djit;
 	// djit_analyzer_->Register();
 
-	eraser_analyzer_=new Eraser();
-	eraser_analyzer_->Register();
+	// eraser_analyzer_=new Eraser();
+	// eraser_analyzer_->Register();
 
 	// race_track_analyzer_=new RaceTrack();
 	// race_track_analyzer_->Register();
@@ -27,6 +27,9 @@ void Profiler::HandlePreSetup()
 	
 	// fast_track_analyzer_=new FastTrack();
 	// fast_track_analyzer_->Register();
+
+	literace_analyzer_=new LiteRace();
+	literace_analyzer_->Register();	
 
 	// loft_analyzer_=new Loft();
 	// loft_analyzer_->Register();
@@ -60,10 +63,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(djit_analyzer_);
 	// }
 
-	if(eraser_analyzer_->Enabled()) {
-		eraser_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(eraser_analyzer_);
-	}
+	// if(eraser_analyzer_->Enabled()) {
+	// 	eraser_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(eraser_analyzer_);
+	// }
 	
 	// if(race_track_analyzer_->Enabled()) {
 	// 	race_track_analyzer_->Setup(CreateMutex(),race_db_);
@@ -84,6 +87,11 @@ void Profiler::HandlePostSetup()
 	// 	fast_track_analyzer_->Setup(CreateMutex(),race_db_);
 	// 	AddAnalyzer(fast_track_analyzer_);
 	// }
+
+	if(literace_analyzer_->Enabled()) {
+		literace_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(literace_analyzer_);
+	}	
 
 	// if(loft_analyzer_->Enabled()) {
 	// 	loft_analyzer_->Setup(CreateMutex(),race_db_);
@@ -129,11 +137,12 @@ void Profiler::HandleProgramExit()
 	ExecutionControl::HandleProgramExit();
 	//save statistics
 	//djit_analyzer_->SaveStatistics("statistics");
-	eraser_analyzer_->SaveStatistics("statistics");
+	//eraser_analyzer_->SaveStatistics("statistics");
 	//thread_sanitizer_analyzer_->SaveStatistics("statistics");
 	//helgrind_analyzer_->SaveStatistics("statistics");
 	//loft_analyzer_->SaveStatistics("statistics");
 	//fast_track_analyzer_->SaveStatistics("statistics");
+	literace_analyzer_->SaveStatistics("statistics");
 	//acculock_analyzer_->SaveStatistics("statistics");
 	//multilock_hb_analyzer_->SaveStatistics("statistics");
 	//simple_lock_analyzer_->SaveStatistics("statistics");

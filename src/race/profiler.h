@@ -10,6 +10,7 @@
 #include "race/helgrind.h"
 #include "race/thread_sanitizer.h"
 #include "race/fast_track.h"
+#include "race/literace.h"
 #include "race/loft.h"
 #include "race/acculock.h"
 #include "race/multilock_hb.h"
@@ -28,6 +29,7 @@ public:
 			helgrind_analyzer_(NULL),
 			thread_sanitizer_analyzer_(NULL),
 			fast_track_analyzer_(NULL),
+			literace_analyzer_(NULL),
 			loft_analyzer_(NULL),
 			acculock_analyzer_(NULL),
 			multilock_hb_analyzer_(NULL),
@@ -51,6 +53,7 @@ protected:
 	Helgrind *helgrind_analyzer_;
 	ThreadSanitizer *thread_sanitizer_analyzer_;
 	FastTrack *fast_track_analyzer_;
+	LiteRace *literace_analyzer_;
 	Loft *loft_analyzer_;
 	AccuLock *acculock_analyzer_;
 	MultiLockHb *multilock_hb_analyzer_;

@@ -14,7 +14,6 @@ public:
 
 	void Register();
 	bool Enabled();
-	void Setup(Mutex *lock,RaceDB *race_db);
 
 	void AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 		Inst *inst,address_t addr);
