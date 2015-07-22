@@ -82,11 +82,6 @@ void ExecutionControl::PostSetup()
 	}
 }
 
-// uint32 trace_count=0;
-// uint32 bbl_count=0;
-// int jmp;
-// bool flag=false;
-
 void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v) 
 {
 	HandlePreInstrumentTrace(trace);
@@ -95,40 +90,7 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 	if(!desc_.HookMem() && !desc_.HookAtomicInst()) {
 		HandlePostInstrumentTrace(trace);
 		return ;
-	}
-
-	/*{
-		
-		IMG img=GetImgByTrace(trace);
-		RTN rtn=TRACE_Rtn(trace);
-		if(!HandleIgnoreMemAccess(img)) {
-			if(IMG_Name(img).find("condvar")!=std::string::npos) {
-				if(RTN_Name(rtn).compare("main")==0) {
-					trace_count++;
-					for(BBL bbl=TRACE_BblHead(trace);BBL_Valid(bbl);bbl=BBL_Next(bbl)) {
-						bbl_count++;
-						for(INS ins=BBL_InsHead(bbl);INS_Valid(ins);ins=INS_Next(ins)) {
-							if(!flag && INS_IsBranch(ins)) {
-								flag=true;
-								jmp=INS_Address(ins);
-								INFO_FMT_PRINT("branch,addr:%d\n",jmp);
-							}
-
-							if(flag && INS_IsCall(ins)) {
-								INFO_FMT_PRINT("diff:%d\n",(uint32)INS_Address(ins)-jmp);
-								INFO_FMT_PRINT("call,addr:%ld\n",INS_Address(ins));
-								INFO_FMT_PRINT("%s\n",INS_Disassemble(ins).c_str());
-								flag=false;
-
-								//
-							}
-						}
-					}
-				}
-			}
-		}
-	}*/
-	
+	}	
 	for(BBL bbl=TRACE_BblHead(trace);BBL_Valid(bbl);bbl=BBL_Next(bbl)) {
 		//Get the corresponding img of this trace.
 		IMG img=GetImgByTrace(trace);
@@ -395,11 +357,8 @@ void ExecutionControl::ProgramStart()
 void ExecutionControl::ProgramExit(INT32 code,VOID *v)
 {
 	HandleProgramExit();
-	// INFO_FMT_PRINT("trace_count:%u\n",trace_count);
-	// INFO_FMT_PRINT("bbl_count:%u\n",bbl_count);
 	//save static info
 	sinfo_->Save(knob_->ValueStr("sinfo_out"));
-
 	//close debug file if exists
 	if(debug_file_)
 		debug_file_->Close();

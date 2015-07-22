@@ -49,8 +49,9 @@ void LiteRace::UpdateRate(LrMeta *meta)
 		if(meta->rate<1)
 			meta->rate=1;
 	}
-	meta->scount=meta->icount*meta->rate/1000;
-	meta->ncount=meta->icount-meta->scount;
+	meta->scount=100;
+	meta->ncount=meta->scount*(1000-meta->rate)/meta->rate;
+	//INFO_PRINT("update race\n");
 }
 
 void LiteRace::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
@@ -60,7 +61,7 @@ void LiteRace::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 	lr_meta->icount++;
 	if(lr_meta->ncount==0 && --lr_meta->scount>0)
 		Djit::ProcessRead(curr_thd_id,meta,inst);
-	else if(lr_meta->scount==0)
+	else if(lr_meta->scount==0) 
 		UpdateRate(lr_meta);
 	else
 		lr_meta->ncount--;

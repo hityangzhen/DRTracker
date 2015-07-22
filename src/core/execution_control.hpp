@@ -220,7 +220,7 @@ protected:
  	std::map<OS_THREAD_ID,thread_t> child_thd_map_;
  	std::map<OS_THREAD_ID,thread_t> os_tid_map_;
  	std::map<pthread_t,thread_t> pthread_handle_map_;
-
+ 	
  	static ExecutionControl *ctrl_;
  private:
  	void InstrumentStartupFunc(IMG img);
