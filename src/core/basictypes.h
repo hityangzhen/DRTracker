@@ -6,7 +6,6 @@
  */
 
 #include <stdint.h>
-#include <string>
 #include <cassert>
 #include <cstddef>
 #include <cstdio>

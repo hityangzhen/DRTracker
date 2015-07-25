@@ -10,8 +10,8 @@ void Profiler::HandlePreSetup()
 	knob_->RegisterStr("race_out","the output race database path","race.db");
 	knob_->RegisterStr("race_report","the output race report path","race.rp");
 
-	// djit_analyzer_=new Djit;
-	// djit_analyzer_->Register();
+	djit_analyzer_=new Djit;
+	djit_analyzer_->Register();
 
 	// eraser_analyzer_=new Eraser();
 	// eraser_analyzer_->Register();
@@ -28,8 +28,8 @@ void Profiler::HandlePreSetup()
 	// fast_track_analyzer_=new FastTrack();
 	// fast_track_analyzer_->Register();
 
-	literace_analyzer_=new LiteRace();
-	literace_analyzer_->Register();	
+	// literace_analyzer_=new LiteRace();
+	// literace_analyzer_->Register();	
 
 	// loft_analyzer_=new Loft();
 	// loft_analyzer_->Register();
@@ -58,10 +58,10 @@ void Profiler::HandlePostSetup()
 	race_rp_=new RaceReport(CreateMutex());
 
 	//add  data race detector
-	// if(djit_analyzer_->Enabled()) {
-	// 	djit_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(djit_analyzer_);
-	// }
+	if(djit_analyzer_->Enabled()) {
+		djit_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(djit_analyzer_);
+	}
 
 	// if(eraser_analyzer_->Enabled()) {
 	// 	eraser_analyzer_->Setup(CreateMutex(),race_db_);
@@ -88,10 +88,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(fast_track_analyzer_);
 	// }
 
-	if(literace_analyzer_->Enabled()) {
-		literace_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(literace_analyzer_);
-	}	
+	// if(literace_analyzer_->Enabled()) {
+	// 	literace_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(literace_analyzer_);
+	// }	
 
 	// if(loft_analyzer_->Enabled()) {
 	// 	loft_analyzer_->Setup(CreateMutex(),race_db_);
@@ -136,13 +136,13 @@ void Profiler::HandleProgramExit()
 {
 	ExecutionControl::HandleProgramExit();
 	//save statistics
-	//djit_analyzer_->SaveStatistics("statistics");
+	djit_analyzer_->SaveStatistics("statistics");
 	//eraser_analyzer_->SaveStatistics("statistics");
 	//thread_sanitizer_analyzer_->SaveStatistics("statistics");
 	//helgrind_analyzer_->SaveStatistics("statistics");
 	//loft_analyzer_->SaveStatistics("statistics");
 	//fast_track_analyzer_->SaveStatistics("statistics");
-	literace_analyzer_->SaveStatistics("statistics");
+	//literace_analyzer_->SaveStatistics("statistics");
 	//acculock_analyzer_->SaveStatistics("statistics");
 	//multilock_hb_analyzer_->SaveStatistics("statistics");
 	//simple_lock_analyzer_->SaveStatistics("statistics");

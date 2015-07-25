@@ -28,7 +28,6 @@ pintools += \
 race_profiler_objs := \
   race/detector.o \
   race/djit.o \
-  race/literace.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

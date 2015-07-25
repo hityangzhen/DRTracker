@@ -3,6 +3,7 @@
 
 #include <list>
 #include <map>
+#include <tr1/unordered_set>
 
 #include "pin.H"
 
@@ -220,10 +221,13 @@ protected:
  	std::map<OS_THREAD_ID,thread_t> child_thd_map_;
  	std::map<OS_THREAD_ID,thread_t> os_tid_map_;
  	std::map<pthread_t,thread_t> pthread_handle_map_;
+
+ 	std::tr1::unordered_set<std::string> instrumented_lines_;
  	
  	static ExecutionControl *ctrl_;
  private:
  	void InstrumentStartupFunc(IMG img);
+ 	bool FilterNonPotentialInstrument(std::string &filename,INT32 &line,INS ins);
 
  	static void __Main(THREADID tid,CONTEXT *ctxt);
  	static void __ThreadMain(THREADID ,CONTEXT *ctxt);
