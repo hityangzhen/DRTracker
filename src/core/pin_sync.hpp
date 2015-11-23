@@ -1,5 +1,5 @@
-#ifndef __CORE_PIN_SYNC_H
-#define __CORE_PIN_SYNC_H
+#ifndef __CORE_PIN_SYNC_HPP
+#define __CORE_PIN_SYNC_HPP
 
 #include "pin.H"
 #include "core/basictypes.h"
@@ -21,4 +21,19 @@ private:
 	DISALLOW_COPY_CONSTRUCTORS(PinMutex);
 };
 
-#endif /* __CORE_PIN_SYNC_H */
+
+//Pin Semaphore
+class PinSemaphore {
+public:
+	PinSemaphore() {}
+	~PinSemaphore() {PIN_SemaphoreFini(&semaphore_);}
+	void Init() {PIN_SemaphoreInit(&semaphore_);}
+	void Wait() {PIN_SemaphoreWait(&semaphore_);}
+	bool IsWaiting() {return !PIN_SemaphoreIsSet(&semaphore_);}
+	void TimedWait(unsigned timeout) {PIN_SemaphoreTimedWait(&semaphore_,timeout);}
+	void Post() {PIN_SemaphoreSet(&semaphore_);}
+private:
+	PIN_SEMAPHORE semaphore_;
+};
+
+#endif /* __CORE_PIN_SYNC_HPP */

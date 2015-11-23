@@ -221,7 +221,8 @@ protected:
  	std::map<OS_THREAD_ID,thread_t> child_thd_map_;
  	std::map<OS_THREAD_ID,thread_t> os_tid_map_;
  	std::map<pthread_t,thread_t> pthread_handle_map_;
-
+ 	//potential race statements
+ 	std::tr1::unordered_set<std::string> static_profile_;
  	std::tr1::unordered_set<std::string> instrumented_lines_;
  	
  	static ExecutionControl *ctrl_;

@@ -17,6 +17,7 @@ srcs += \
   race/multilock_hb.cc \
   race/simple_lock.cc \
   race/simplelock_plus.cc \
+  race/verifier.cpp \
   race/profiler.cpp \
   race/profiler_main.cpp \
   race/race.cc \
@@ -26,8 +27,7 @@ pintools += \
 	race_profiler.so
 
 race_profiler_objs := \
-  race/detector.o \
-  race/djit.o \
+  race/verifier.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \
@@ -48,5 +48,7 @@ race_objs := \
   race/loft.o \
   race/simple_lock.o \
   race/simplelock_plus.o \
+  race/verifier.o \
   race/race.o \
   race/race.pb.o
+  

@@ -46,3 +46,13 @@ bool BBLContainMemOp(BBL bbl)
 	}
 	return false;
 }
+
+void Yield()
+{
+	PIN_Yield();
+}
+
+void Sleep(UINT32 milliseconds)
+{
+	PIN_Sleep(milliseconds);
+}

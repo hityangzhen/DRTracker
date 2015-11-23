@@ -17,5 +17,12 @@ extern IMG GetImgByTrace(TRACE trace);
 //Return whethrer the given bbl contains no-stack memory access.
 extern bool BBLContainMemOp(BBL bbl);
 
+// Yield the processor to another thread.
+extern void Yield();
+
+//Delay execution of the current thread for the specified time interval. 
+extern void Sleep(UINT32 milliseconds);
+
+
 #endif /* __PIN_UTIL_H */
 

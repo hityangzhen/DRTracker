@@ -16,6 +16,8 @@
 #include "race/multilock_hb.h"
 #include "race/simple_lock.h"
 #include "race/simplelock_plus.h"
+#include "race/verifier.h"
+#include "race/potential_race.h"
 
 namespace race{
 
@@ -34,8 +36,9 @@ public:
 			acculock_analyzer_(NULL),
 			multilock_hb_analyzer_(NULL),
 			simple_lock_analyzer_(NULL),
-			simplelock_plus_analyzer_(NULL)
-
+			simplelock_plus_analyzer_(NULL),
+			prace_db_(NULL),
+			verifier_analyzer_(NULL)
 	{}
 	~Profiler() {}
 
@@ -44,7 +47,7 @@ protected:
 	void HandlePostSetup();
 	bool HandleIgnoreMemAccess(IMG img);
 	void HandleProgramExit();
-
+	//======================data race detection=====================
 	RaceDB *race_db_;
 	RaceReport *race_rp_;
 	Djit *djit_analyzer_;
@@ -59,7 +62,12 @@ protected:
 	MultiLockHb *multilock_hb_analyzer_;
 	SimpleLock *simple_lock_analyzer_;
 	SimpleLockPlus *simplelock_plus_analyzer_;
+	//==============================end============================
 
+	//======================data race verifier=====================
+	PRaceDB *prace_db_;
+	Verifier *verifier_analyzer_;
+	//==============================end============================	
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Profiler);
 };

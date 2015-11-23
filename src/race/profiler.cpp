@@ -6,12 +6,14 @@ void Profiler::HandlePreSetup()
 {
 	ExecutionControl::HandlePreSetup();
 	knob_->RegisterBool("ignore_lib","whether ignore accesses from common libraries","0");
-	knob_->RegisterStr("race_in","the input race database path","race.db");
-	knob_->RegisterStr("race_out","the output race database path","race.db");
-	knob_->RegisterStr("race_report","the output race report path","race.rp");
 
-	djit_analyzer_=new Djit;
-	djit_analyzer_->Register();
+	//======================data race detection=====================
+	// knob_->RegisterStr("race_in","the input race database path","race.db");
+	// knob_->RegisterStr("race_out","the output race database path","race.db");
+	// knob_->RegisterStr("race_report","the output race report path","race.rp");
+
+	// djit_analyzer_=new Djit;
+	// djit_analyzer_->Register();
 
 	// eraser_analyzer_=new Eraser();
 	// eraser_analyzer_->Register();
@@ -45,23 +47,31 @@ void Profiler::HandlePreSetup()
 
 	// simplelock_plus_analyzer_=new SimpleLockPlus();
 	// simplelock_plus_analyzer_->Register();
+
+	//==============================end============================
+
+	//======================data race verifier=====================
+	verifier_analyzer_=new Verifier;
+	verifier_analyzer_->Register();
+	//==============================end============================	
 }
 
 void Profiler::HandlePostSetup()
 {
 	ExecutionControl::HandlePostSetup();
-	//load race db
-	race_db_=new RaceDB(CreateMutex());
-	race_db_->Load(knob_->ValueStr("race_in"),sinfo_);
+	//======================data race detection=====================
+	// //load race db
+	// race_db_=new RaceDB(CreateMutex());
+	// race_db_->Load(knob_->ValueStr("race_in"),sinfo_);
 
-	//create race report
-	race_rp_=new RaceReport(CreateMutex());
+	// //create race report
+	// race_rp_=new RaceReport(CreateMutex());
 
-	//add  data race detector
-	if(djit_analyzer_->Enabled()) {
-		djit_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(djit_analyzer_);
-	}
+	// //add  data race detector
+	// if(djit_analyzer_->Enabled()) {
+	// 	djit_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(djit_analyzer_);
+	// }
 
 	// if(eraser_analyzer_->Enabled()) {
 	// 	eraser_analyzer_->Setup(CreateMutex(),race_db_);
@@ -117,6 +127,34 @@ void Profiler::HandlePostSetup()
 	// 	simplelock_plus_analyzer_->Setup(CreateMutex(),race_db_);
 	// 	AddAnalyzer(simplelock_plus_analyzer_);
 	// }
+	//==============================end============================
+
+	//======================data race verifier=====================
+	if(verifier_analyzer_->Enabled()) {
+		//load the pstmts into prace_db
+		prace_db_=new PRaceDB;
+		char buffer[100];
+		const char *delimit=" ", *fn=NULL, *l=NULL;
+		PStmt *pstmt=NULL;
+		for(std::tr1::unordered_set<std::string>::iterator iter=
+			static_profile_.begin();iter!=static_profile_.end();
+			iter++) {
+			iter->copy(buffer,iter->size(),0);
+			buffer[iter->size()]='\0';
+			fn=strtok(buffer,delimit);
+			l=strtok(NULL,delimit);
+			DEBUG_ASSERT(fn && l);
+			pstmt=prace_db_->GetPStmtAndCreate(fn,l);
+			fn=strtok(NULL,delimit);				
+			l=strtok(NULL,delimit);
+			DEBUG_ASSERT(fn && l);
+			prace_db_->BuildRelationMapping(pstmt,fn,l);
+		}
+
+		verifier_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+		AddAnalyzer(verifier_analyzer_);
+	}
+	//==============================end============================
 }
 
 bool Profiler::HandleIgnoreMemAccess(IMG img)
@@ -135,24 +173,34 @@ bool Profiler::HandleIgnoreMemAccess(IMG img)
 void Profiler::HandleProgramExit()
 {
 	ExecutionControl::HandleProgramExit();
-	//save statistics
-	djit_analyzer_->SaveStatistics("statistics");
-	//eraser_analyzer_->SaveStatistics("statistics");
-	//thread_sanitizer_analyzer_->SaveStatistics("statistics");
-	//helgrind_analyzer_->SaveStatistics("statistics");
-	//loft_analyzer_->SaveStatistics("statistics");
-	//fast_track_analyzer_->SaveStatistics("statistics");
-	//literace_analyzer_->SaveStatistics("statistics");
-	//acculock_analyzer_->SaveStatistics("statistics");
-	//multilock_hb_analyzer_->SaveStatistics("statistics");
-	//simple_lock_analyzer_->SaveStatistics("statistics");
-	//simplelock_plus_analyzer_->SaveStatistics("statistics");
 
-	//save race db
-	race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
+	//======================data race verifier=====================
+	// //save statistics
+	// djit_analyzer_->SaveStatistics("statistics");
+	// //eraser_analyzer_->SaveStatistics("statistics");
+	// //thread_sanitizer_analyzer_->SaveStatistics("statistics");
+	// //helgrind_analyzer_->SaveStatistics("statistics");
+	// //loft_analyzer_->SaveStatistics("statistics");
+	// //fast_track_analyzer_->SaveStatistics("statistics");
+	// //literace_analyzer_->SaveStatistics("statistics");
+	// //acculock_analyzer_->SaveStatistics("statistics");
+	// //multilock_hb_analyzer_->SaveStatistics("statistics");
+	// //simple_lock_analyzer_->SaveStatistics("statistics");
+	// //simplelock_plus_analyzer_->SaveStatistics("statistics");
 
-	//save race report
-	race_rp_->Save(knob_->ValueStr("race_report"),race_db_);	
+	// //save race db
+	// race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
+
+	// //save race report
+	// race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
+
+	// delete race_db_;
+	// delete race_rp_;
+	//==============================end============================
+
+	//======================data race verifier=====================
+	delete prace_db_;
+	//==============================end============================	
 }
 
 }// namespace race

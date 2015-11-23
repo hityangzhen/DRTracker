@@ -3,16 +3,16 @@
 #include <stdlib.h>
 using namespace std;
 
-int tester = 0;
+//int tester = 0;
 int LOOP_COUNT = 5;
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 
 void *thread1(void *tmp)
 {
-	tester += 3;
+	//tester += 3;
 	for(int i=0;i<1000000;i++) ;
 	*(int *)tmp += 1;
-	cout<<tester<<endl;
+	//cout<<tester<<endl;
 	return NULL;
 }
 void *thread2(void *tmp)
@@ -20,7 +20,7 @@ void *thread2(void *tmp)
 	
 	*(int *)tmp += 2;
 	for(int i=0;i<1000000;i++) ;
-	tester += 3;
+	//tester += 3;
 	return NULL;
 }
 
@@ -30,10 +30,10 @@ void threadCretator()
 
 	pthread_t id1,id2;
 	pthread_create(&id1,NULL,thread1,tmp);
-	tester += 2;
+	//tester += 2;
 	pthread_create(&id2,NULL,thread2,tmp);
 	for(int i=0;i<1000000;i++) ;
-	cout<<*tmp<<endl;
+	//cout<<*tmp<<endl;
 	pthread_join(id1,NULL);
 	pthread_join(id2,NULL);
 	delete tmp;
