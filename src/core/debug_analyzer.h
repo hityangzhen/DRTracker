@@ -52,7 +52,7 @@ public:
   	}
 
   	void ThreadExit(thread_t currThdId,timestamp_t currThdClk) {
-  		INFO_FMT_PRINT_SAFE("[T%lx] Thread Exit",currThdId);	
+  		INFO_FMT_PRINT_SAFE("[T%lx] Thread Exit\n",currThdId);	
   	}
 
 	void Main(thread_t currThdId,timestamp_t currThdClk) {

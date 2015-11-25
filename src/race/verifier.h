@@ -86,6 +86,11 @@ public:
 	virtual void BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,address_t addr,size_t size);
 
+	// virtual void AfterMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	// 	Inst *inst,address_t addr,size_t size);
+	// virtual void AfterMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	// 	Inst *inst,address_t addr,size_t size);
+
 	//malloc-free
 	virtual void AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     	Inst *inst, size_t size, address_t addr);

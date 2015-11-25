@@ -77,10 +77,12 @@ void Verifier::ImageUnload(Image *image,address_t low_addr,address_t high_addr,
 void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 {
 	PinSemaphore *pin_sema=new PinSemaphore;
+	// SysSemaphore *sys_sema=new SysSemaphore(0);
 	ScopedLock lock(verify_lock_);
 	if(thd_smp_map_.find(curr_thd_id)==thd_smp_map_.end()) {
 		thd_smp_map_[curr_thd_id]=pin_sema;
-		thd_smp_map_[curr_thd_id]->Init();		
+		thd_smp_map_[curr_thd_id]->Init();
+		// thd_smp_map_[curr_thd_id]=sys_sema;
 	}
 	//all threads are available at the beginning
 	avail_thd_set_.insert(curr_thd_id);
@@ -89,10 +91,6 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
 INFO_FMT_PRINT("=============postpone set size:[%ld]==============\n",pp_thd_set_.size());
-	for(PostponeThreadSet::iterator iter=pp_thd_set_.begin();iter!=pp_thd_set_.end();
-		iter++)
-		INFO_FMT_PRINT("+++++++++++pp thread:[%lx]++++++++++++\n",*iter);
-
 	ScopedLock lock(verify_lock_);
 	//
 	if(thd_metas_map_.find(curr_thd_id)!=thd_metas_map_.end() && 
@@ -199,6 +197,14 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 	size_t size,bool is_read)
 {
 INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_thd_id);
+	//current thread is the only available thread, we shouldn't postpone it
+	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
+		DEBUG_ASSERT(*avail_thd_set_.begin()==curr_thd_id);
+			//must free the lock
+		VerifyUnlock();
+		return ;
+	}
+
 	//get the potential statement
 	std::string file_name=inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
@@ -242,6 +248,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 		for(MetaSet::iterator iter=metas->begin();iter!=metas->end();iter++)
 			pstmt_metas_map_[pstmt]->insert(*iter);		
 		thd_metas_map_[curr_thd_id]=metas;
+
 		//postpone current thread
 		PostponeThread(curr_thd_id);
 	} else {
@@ -261,8 +268,10 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 					//traverse postponed threads
 					for(ThreadMetasMap::iterator iiiter=thd_metas_map_.begin();
 						iiiter!=thd_metas_map_.end();iiiter++) {
-
-						if(iiiter->second->find(*iiter)!=iiiter->second->end()) {
+						//must check thread whether in the pp_thd_set_
+						if(pp_thd_set_.find(iiiter->first)!=pp_thd_set_.end() && 
+							iiiter->second!=NULL && 
+							iiiter->second->find(*iiter)!=iiiter->second->end()) {
 							pp_thds.insert(iiiter->first);
 							//clear the entire metas of the thread from the pstmt
 							//corresponding metas
@@ -289,7 +298,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 		}else
 			HandleNoRace(curr_thd_id);
 	}
-INFO_PRINT("=================process read or write end===================\n");
+INFO_FMT_PRINT("=========process read or write end:[%lx]=========\n",curr_thd_id);
 }
 
 void Verifier::FreeAddrRegion(address_t addr)
@@ -365,23 +374,16 @@ INFO_PRINT("=================handle race===================\n");
  */
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
-INFO_PRINT("=================postpone thread===================\n");
-	//only have one available thread
-	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
-		DEBUG_ASSERT(*avail_thd_set_.begin()==curr_thd_id);
-		//must free the lock
-		VerifyUnlock();
-		return ;
-	}
+INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
 	pp_thd_set_.insert(curr_thd_id);
 	avail_thd_set_.erase(curr_thd_id);
-
 	//must choose one thread execute continuously if all threads are unavailable
 	if(avail_thd_set_.empty())
 		ChooseRandomThreadAfterAllUnavailable();
 	VerifyUnlock();
-	//semahore wait
+	//semahore wait	
 	thd_smp_map_[curr_thd_id]->Wait();
+INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
 }
 
 void Verifier::ChooseRandomThreadAfterAllUnavailable()
@@ -392,17 +394,21 @@ void Verifier::ChooseRandomThreadAfterAllUnavailable()
 INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",thd_id);
 	DEBUG_ASSERT(thd_smp_map_[thd_id]);
 	if(thd_smp_map_[thd_id]->IsWaiting())
-		thd_smp_map_[thd_id]->Post();		
+		thd_smp_map_[thd_id]->Post();
+	// thd_smp_map_[thd_id]->Post();
 	pp_thd_set_.erase(thd_id);
 	avail_thd_set_.insert(thd_id);
 }
 
 void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds)
 {
+INFO_FMT_PRINT("=================wakeup pp_thds size:[%ld]===================\n",pp_thds->size());
 	DEBUG_ASSERT(pp_thds);
 	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
 		iter++) {
-		thd_smp_map_[*iter]->Post();
+		if(thd_smp_map_[*iter]->IsWaiting())
+			thd_smp_map_[*iter]->Post();
+		// thd_smp_map_[*iter]->Post();
 		pp_thd_set_.erase(*iter);
 		avail_thd_set_.insert(*iter);
 		//clear postponed threads' corresponding metas
@@ -433,16 +439,17 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 	PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,bool is_read,
 	MetaSet &raced_metas)
 {
+	if(pstmt_metas_map_.find(first_pstmt)==pstmt_metas_map_.end() || 
+		pstmt_metas_map_[first_pstmt]==NULL)
+		return ;
 	MetaSet *first_metas=pstmt_metas_map_[first_pstmt];
 	// if(pstmt_metas_map_.find(second_pstmt)==pstmt_metas_map_.end() ||
 	// 	pstmt_metas_map_[second_pstmt]==NULL)
 	// 	pstmt_metas_map_[second_pstmt]=new MetaSet;
 	MAP_KEY_NOTFOUND_NEW(pstmt_metas_map_,second_pstmt,MetaSet);
 	MetaSet *second_metas=pstmt_metas_map_[second_pstmt];
-
 	//current thread acccessed metas
 	MetaSet *metas=new MetaSet;
-
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 		Meta *meta=GetMeta(iaddr);
 		DEBUG_ASSERT(meta);
