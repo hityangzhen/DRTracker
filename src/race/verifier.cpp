@@ -17,9 +17,15 @@ Verifier::~Verifier()
 	delete verify_lock_;
 	delete filter_;
 
-	//free the pstmt relevant meta set
+	//some non-raced metas will be kept
+
 	for(PStmtMetasMap::iterator iter=pstmt_metas_map_.begin();
 		iter!=pstmt_metas_map_.end();iter++) {
+		if(iter->second)
+			delete iter->second;
+	}
+	for(ThreadMetasMap::iterator iter=thd_metas_map_.begin();
+		iter!=thd_metas_map_.end();iter++) {
 		if(iter->second)
 			delete iter->second;
 	}
@@ -76,13 +82,13 @@ void Verifier::ImageUnload(Image *image,address_t low_addr,address_t high_addr,
 
 void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 {
-	PinSemaphore *pin_sema=new PinSemaphore;
-	// SysSemaphore *sys_sema=new SysSemaphore(0);
-	ScopedLock lock(verify_lock_);
+	// PinSemaphore *pin_sema=new PinSemaphore;
+	SysSemaphore *sys_sema=new SysSemaphore(0);
+	ScopedLock lock(internal_lock_);
 	if(thd_smp_map_.find(curr_thd_id)==thd_smp_map_.end()) {
-		thd_smp_map_[curr_thd_id]=pin_sema;
-		thd_smp_map_[curr_thd_id]->Init();
-		// thd_smp_map_[curr_thd_id]=sys_sema;
+		// thd_smp_map_[curr_thd_id]=pin_sema;
+		// thd_smp_map_[curr_thd_id]->Init();
+		thd_smp_map_[curr_thd_id]=sys_sema;
 	}
 	//all threads are available at the beginning
 	avail_thd_set_.insert(curr_thd_id);
@@ -91,7 +97,7 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
 INFO_FMT_PRINT("=============postpone set size:[%ld]==============\n",pp_thd_set_.size());
-	ScopedLock lock(verify_lock_);
+	ScopedLock lock(internal_lock_);
 	//
 	if(thd_metas_map_.find(curr_thd_id)!=thd_metas_map_.end() && 
 		thd_metas_map_[curr_thd_id]!=NULL)
@@ -105,7 +111,6 @@ INFO_FMT_PRINT("=============postpone set size:[%ld]==============\n",pp_thd_set
 	//must remove from postpone thread set to make current thread exit
 	if(pp_thd_set_.find(curr_thd_id)!=pp_thd_set_.end())
 		pp_thd_set_.erase(curr_thd_id);
-
 	if(avail_thd_set_.empty())
 		ChooseRandomThreadAfterAllUnavailable();
 }
@@ -113,20 +118,19 @@ INFO_FMT_PRINT("=============postpone set size:[%ld]==============\n",pp_thd_set
 void Verifier::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,thread_t child_thd_id)
 {
-	ScopedLock lock(verify_lock_);
-	blk_thd_set_.insert(curr_thd_id);
-	avail_thd_set_.erase(curr_thd_id);
+	ScopedLock lock(internal_lock_);
+	BlockThread(curr_thd_id);
 	//current thread is blocked
 	if(avail_thd_set_.empty()) 
 		ChooseRandomThreadAfterAllUnavailable();
+	INFO_FMT_PRINT("================before pthread join avail_thd_set_.size:[%ld]\n",avail_thd_set_.size());
 }
 
 void Verifier::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,thread_t child_thd_id)
 {
-	ScopedLock lock(verify_lock_);
-	blk_thd_set_.erase(curr_thd_id);
-	avail_thd_set_.insert(curr_thd_id);
+	ScopedLock lock(internal_lock_);
+	UnblockThread(curr_thd_id);
 }
 
 void Verifier::AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
@@ -173,6 +177,68 @@ void Verifier::BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	ProcessReadOrWrite(curr_thd_id,inst,addr,size,WRITE);
 }
 
+void Verifier::BeforePthreadMutexLock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	MAP_KEY_NOTFOUND_NEW(mutex_meta_table_,addr,MutexMeta);
+	MutexMeta *mutex_meta=mutex_meta_table_[addr];
+
+	thread_t thd_id=mutex_meta->GetOwner();
+INFO_FMT_PRINT("================mutex lock owner:[%lx]\n",
+		thd_id);
+	//other thread has acquire the lock
+	BlockThread(curr_thd_id);
+	if(thd_id!=0) {	
+		if(avail_thd_set_.empty() && 
+			pp_thd_set_.find(thd_id)!=pp_thd_set_.end()) {
+			WakeUpPostponeThread(thd_id);
+		}
+		// else do nothing blocked
+	}
+	INFO_FMT_PRINT("================before thread mutex lock avail_thd_set_ size:[%ld]\n",
+		avail_thd_set_.size());
+}
+	
+void Verifier::AfterPthreadMutexLock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+	//set the owner
+	ScopedLock lock(internal_lock_);
+	MutexMeta *mutex_meta=mutex_meta_table_[addr];
+	mutex_meta->SetOwner(curr_thd_id);
+	//if current not blocked, blk_thd_set_ and avail_thd_set_
+	//result will not be changed
+	UnblockThread(curr_thd_id);
+}
+
+void Verifier::BeforePthreadMutexUnlock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+
+}
+
+void Verifier::AfterPthreadMutexUnlock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+	//clear the owner
+	ScopedLock lock(internal_lock_);
+	MutexMeta *mutex_meta=mutex_meta_table_[addr];
+	mutex_meta->SetOwner(0);
+}
+
+void Verifier::BeforePthreadMutexTryLock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+
+}
+
+void Verifier::AfterPthreadMutexTryLock(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr,int retVal)
+{
+
+}
+
 /**
  * multi-threaded region
  */
@@ -197,20 +263,11 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 	size_t size,bool is_read)
 {
 INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_thd_id);
-	//current thread is the only available thread, we shouldn't postpone it
-	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
-		DEBUG_ASSERT(*avail_thd_set_.begin()==curr_thd_id);
-			//must free the lock
-		VerifyUnlock();
-		return ;
-	}
-
 	//get the potential statement
 	std::string file_name=inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
-
 	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
 	DEBUG_ASSERT(pstmt);
 
@@ -351,6 +408,7 @@ INFO_PRINT("=================handle race===================\n");
 	//clear raced info whenever
 	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
 		iter++) {
+INFO_FMT_PRINT("+++++++++++++++++++pp_thd_id:[%lx]+++++++++++++++++\n",*iter);
 		//clear raced metas
 		delete thd_metas_map_[*iter];
 		thd_metas_map_[*iter]=NULL;
@@ -375,13 +433,28 @@ INFO_PRINT("=================handle race===================\n");
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
 INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
+
+	//correspond to before_mutex_lock
+	InternalLock();
+INFO_FMT_PRINT("=================avail_thd_set_ size:[%ld]===================\n",avail_thd_set_.size());
+	//current thread is the only available thread, others may be blocked by some sync
+	//operations, we should not postpone it
+
+	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
+		InternalUnlock();
+		VerifyUnlock();		
+		return ;
+	}
+
 	pp_thd_set_.insert(curr_thd_id);
 	avail_thd_set_.erase(curr_thd_id);
 	//must choose one thread execute continuously if all threads are unavailable
 	if(avail_thd_set_.empty())
 		ChooseRandomThreadAfterAllUnavailable();
+
+	InternalUnlock();
 	VerifyUnlock();
-	//semahore wait	
+	//semahore wait
 	thd_smp_map_[curr_thd_id]->Wait();
 INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
 }
@@ -393,9 +466,14 @@ void Verifier::ChooseRandomThreadAfterAllUnavailable()
 	thread_t thd_id=RandomThread(pp_thd_set_);
 INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",thd_id);
 	DEBUG_ASSERT(thd_smp_map_[thd_id]);
-	if(thd_smp_map_[thd_id]->IsWaiting())
-		thd_smp_map_[thd_id]->Post();
-	// thd_smp_map_[thd_id]->Post();
+	// if(thd_smp_map_[thd_id]->IsWaiting())
+	// 	thd_smp_map_[thd_id]->Post();
+	WakeUpPostponeThread(thd_id);
+}
+
+inline void Verifier::WakeUpPostponeThread(thread_t thd_id)
+{
+	thd_smp_map_[thd_id]->Post();
 	pp_thd_set_.erase(thd_id);
 	avail_thd_set_.insert(thd_id);
 }
@@ -406,11 +484,9 @@ INFO_FMT_PRINT("=================wakeup pp_thds size:[%ld]===================\n"
 	DEBUG_ASSERT(pp_thds);
 	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
 		iter++) {
-		if(thd_smp_map_[*iter]->IsWaiting())
-			thd_smp_map_[*iter]->Post();
-		// thd_smp_map_[*iter]->Post();
-		pp_thd_set_.erase(*iter);
-		avail_thd_set_.insert(*iter);
+		// if(thd_smp_map_[*iter]->IsWaiting())
+		// 	thd_smp_map_[*iter]->Post();
+		WakeUpPostponeThread(*iter);
 		//clear postponed threads' corresponding metas
 		delete thd_metas_map_[*iter];
 		thd_metas_map_.erase(*iter);

@@ -23,6 +23,7 @@ namespace race
 
 class Verifier:public Analyzer {
 protected:
+	//data for memory unit
 	class Meta {
 	public:
 		typedef std::tr1::unordered_map<address_t,Meta *> Table;
@@ -42,6 +43,21 @@ protected:
 		uint16 writers;
 	};
 
+	//data for mutex 
+	class MutexMeta {
+	public:
+		typedef std::tr1::unordered_map<address_t,MutexMeta *> Table;
+		MutexMeta() : thd_id(0){}
+		~MutexMeta() {}
+		thread_t GetOwner() {
+			return thd_id;
+		}
+		void SetOwner(thread_t t) {
+			thd_id=t;
+		}
+		thread_t thd_id;
+	};
+
 	enum Status {
 		INITIAL,
 		POSTPONED,
@@ -52,7 +68,7 @@ public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
 	typedef std::tr1::unordered_map<thread_t,MetaSet *> ThreadMetasMap;
-	typedef std::map<thread_t,PinSemaphore *> ThreadSemaphoreMap;
+	typedef std::map<thread_t,SysSemaphore *> ThreadSemaphoreMap;
 	typedef std::set<thread_t> BlockThreadSet;
 	typedef std::set<thread_t> AvailableThreadSet;
 	typedef std::map<PStmt *,MetaSet *> PStmtMetasMap;
@@ -86,11 +102,6 @@ public:
 	virtual void BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,address_t addr,size_t size);
 
-	// virtual void AfterMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-	// 	Inst *inst,address_t addr,size_t size);
-	// virtual void AfterMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-	// 	Inst *inst,address_t addr,size_t size);
-
 	//malloc-free
 	virtual void AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     	Inst *inst, size_t size, address_t addr);
@@ -102,6 +113,20 @@ public:
     	Inst *inst, address_t ori_addr, size_t size,address_t new_addr);
   	virtual void BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     	Inst *inst, address_t addr);
+
+  	//mutex-rwlock
+  	virtual void BeforePthreadMutexTryLock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadMutexTryLock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int retVal);
+	virtual void BeforePthreadMutexLock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadMutexLock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void BeforePthreadMutexUnlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadMutexUnlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 private:
 
 	void AllocAddrRegion(address_t addr,size_t size);
@@ -129,6 +154,8 @@ private:
 
 	void VerifyLock() {verify_lock_->Lock();}
 	void VerifyUnlock() {verify_lock_->Unlock();}
+	void InternalLock() {internal_lock_->Lock();}
+	void InternalUnlock() {internal_lock_->Unlock();}
 
 	void PrintDebugRaceInfo(Meta *meta,RaceType race_type,Inst *inst);
 	
@@ -140,12 +167,21 @@ private:
 		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,bool is_read,
 		MetaSet &raced_metas);
 	void WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds);
+	void WakeUpPostponeThread(thread_t thd_id);
 	void PostponeThread(thread_t curr_thd_id);
 	void HandleRace(PostponeThreadSet *pp_thds,thread_t curr_thd_id);
 	void HandleNoRace(thread_t curr_thd_id);
 
 	void ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas);
-
+	//need to be protected
+	void BlockThread(thread_t curr_thd_id) {
+		blk_thd_set_.insert(curr_thd_id);
+		avail_thd_set_.erase(curr_thd_id);
+	}
+	void UnblockThread(thread_t curr_thd_id) {
+		blk_thd_set_.erase(curr_thd_id);
+		avail_thd_set_.insert(curr_thd_id);
+	}
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
 	PRaceDB *prace_db_;
@@ -156,6 +192,8 @@ private:
 	thread_t rdm_thd_id_;
 
 	Meta::Table meta_table_;
+	MutexMeta::Table mutex_meta_table_;
+
 	//pospone thread set
 	PostponeThreadSet pp_thd_set_;
 	//available thread set
@@ -164,9 +202,9 @@ private:
 	BlockThreadSet blk_thd_set_;
 	//metas belong to accessed pstmt
 	PStmtMetasMap pstmt_metas_map_;
-	//
+	//thread accessed metas
 	ThreadMetasMap thd_metas_map_;
-	//
+	//thread corresponding semaphore
 	ThreadSemaphoreMap thd_smp_map_;
 };
 
