@@ -1,6 +1,7 @@
 #ifndef __RACE_VERIFIER_H
 #define __RACE_VERIFIER_H
 #include <tr1/unordered_map>
+#include <tr1/unordered_set>
 #include <ctime>
 #include "race/potential_race.h"
 #include "core/basictypes.h"
@@ -8,7 +9,7 @@
 #include "core/analyzer.h"
 #include "race/race.h"
 #include "core/pin_sync.hpp"
-#include "core/log.h"
+#include "core/vector_clock.h"
 
 namespace race 
 {
@@ -23,24 +24,45 @@ namespace race
 
 class Verifier:public Analyzer {
 protected:
+	//meta access snapshot
+	struct MetaSnapshot {
+		MetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i):thd_clk(clk),type(t),
+		inst(i) {}
+		timestamp_t thd_clk;
+		RaceEventType type;
+		Inst *inst;
+	};
+	typedef std::vector<MetaSnapshot> MetaSnapshotVector;
+	typedef std::tr1::unordered_map<thread_t,MetaSnapshotVector *> MetaSnapshotsMap;
 	//data for memory unit
 	class Meta {
 	public:
 		typedef std::tr1::unordered_map<address_t,Meta *> Table;
-		explicit Meta(address_t a):addr(a),readers(0),writers(0) {}
-		virtual ~Meta() {}
+		typedef std::tr1::unordered_set<Inst *> InstSet;
+		explicit Meta(address_t a):addr(a) {}
+		virtual ~Meta() {
+			for(MetaSnapshotsMap::iterator iter=meta_ss_map.begin();
+				iter!=meta_ss_map.end();iter++)
+				delete iter->second;
+		}
+		void AddMetaSnapshot(thread_t thd_id,MetaSnapshot meta_ss) {
+			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
+				meta_ss_map[thd_id]=new MetaSnapshotVector;
+			meta_ss_map[thd_id]->push_back(meta_ss);
+		}
 
-		void AddReader() { readers<0?readers=1:readers+=1; }
-		void AddWriter() { writers<0?writers=1:writers+=1; }
-		uint16 GetReaders() { return readers; }
-		uint16 GetWriters() { return writers; }
+		void AddRacedInstPair(Inst *i1,Inst *i2) {
+			raced_inst_set.insert(i1);
+			raced_inst_set.insert(i2);
+		}
+		bool RacedInstPair(Inst *i1,Inst *i2) {
+			return raced_inst_set.find(i1)!=raced_inst_set.end() &&
+					raced_inst_set.find(i2)!=raced_inst_set.end();
+		}
 
-		void CutReader() { readers-=1; }
-		void CutWriter() { writers-=1; }
-
- 		address_t addr;
-		uint16 readers;
-		uint16 writers;
+		address_t addr;
+		InstSet raced_inst_set;
+		MetaSnapshotsMap meta_ss_map;
 	};
 
 	//data for mutex 
@@ -56,6 +78,27 @@ protected:
 			thd_id=t;
 		}
 		thread_t thd_id;
+		VectorClock vc;
+	};
+
+	class RwlockMeta {
+	public:
+		typedef std::tr1::unordered_map<address_t,RwlockMeta *> Table;
+		typedef std::set<thread_t> ThreadSet; 
+		RwlockMeta():wrlock_thd_id(0),ref(0) {}
+		~RwlockMeta() {}
+		void AddRdlockOwner(thread_t t) { rdlock_thd_set.insert(t); }
+		void RemoveRdlockOwner(thread_t t) { rdlock_thd_set.erase(t); }
+		ThreadSet *GetRdlockOwners() { return &rdlock_thd_set; }
+		bool HasRdlockOwner() { return !rdlock_thd_set.empty(); }
+		void SetWrlockOwner(thread_t t) { wrlock_thd_id=t; }
+		thread_t GetWrlockOwner() { return wrlock_thd_id; }
+		ThreadSet rdlock_thd_set;
+		thread_t wrlock_thd_id;
+
+		VectorClock vc;
+		VectorClock wait_vc;
+		uint8 ref;
 	};
 
 	enum Status {
@@ -73,6 +116,7 @@ public:
 	typedef std::set<thread_t> AvailableThreadSet;
 	typedef std::map<PStmt *,MetaSet *> PStmtMetasMap;
 	typedef std::set<PStmt *> PStmtSet;
+	typedef std::tr1::unordered_map<thread_t,VectorClock *> ThreadVectorClockMap;
 
 	Verifier();
 	virtual ~Verifier();
@@ -91,6 +135,8 @@ public:
 	virtual void ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk);
 
 	//thread create-join
+	virtual void AfterPthreadCreate(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+  		Inst *inst,thread_t child_thd_id);
 	virtual void BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,thread_t child_thd_id);
 	virtual void AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
@@ -118,7 +164,7 @@ public:
   	virtual void BeforePthreadMutexTryLock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadMutexTryLock(thread_t curr_thd_id,
-		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int retVal);
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
 	virtual void BeforePthreadMutexLock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadMutexLock(thread_t curr_thd_id,
@@ -127,14 +173,42 @@ public:
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadMutexUnlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+
+	//read-write lock
+	virtual void BeforePthreadRwlockRdlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadRwlockRdlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void BeforePthreadRwlockWrlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadRwlockWrlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void BeforePthreadRwlockUnlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadRwlockUnlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void BeforePthreadRwlockTryRdlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
+	virtual void BeforePthreadRwlockTryWrlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+	virtual void AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
 private:
 
 	void AllocAddrRegion(address_t addr,size_t size);
 	void FreeAddrRegion(address_t addr);
 	//we need to use the filter internal lock
 	bool FilterAccess(address_t addr) {return filter_->Filter(addr,true);}
-	void Process(thread_t curr_thd_id,address_t addr,Inst *inst,bool is_read);
+	void Process(thread_t curr_thd_id,address_t addr,Inst *inst,RaceEventType type);
+
 	Meta* GetMeta(address_t addr);
+	MutexMeta *GetMutexMeta(address_t addr);
+	RwlockMeta *GetRwlockMeta(address_t addr);
+	void ProcessFree(Meta *meta);
+  	void ProcessFree(MutexMeta *mutex_meta);
+  	void ProcessFree(RwlockMeta *rwlock_meta);
 
 	thread_t RandomThread(std::set<thread_t>&thd_set) {
 		srand((unsigned)time(NULL));
@@ -157,15 +231,16 @@ private:
 	void InternalLock() {internal_lock_->Lock();}
 	void InternalUnlock() {internal_lock_->Unlock();}
 
-	void PrintDebugRaceInfo(Meta *meta,RaceType race_type,Inst *inst);
+	void PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,Inst *i1,
+		thread_t t2,Inst *i2);
 	
 	void ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_id);
 	void ChooseRandomThreadAfterAllUnavailable();
 	void ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
-		size_t size,bool is_read);
+		size_t size,RaceEventType type);
 	void RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_addr,
-		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,bool is_read,
-		MetaSet &raced_metas);
+		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,RaceEventType type,
+		PostponeThreadSet &pp_thds);
 	void WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds);
 	void WakeUpPostponeThread(thread_t thd_id);
 	void PostponeThread(thread_t curr_thd_id);
@@ -193,6 +268,7 @@ private:
 
 	Meta::Table meta_table_;
 	MutexMeta::Table mutex_meta_table_;
+	RwlockMeta::Table rwlock_meta_table_;
 
 	//pospone thread set
 	PostponeThreadSet pp_thd_set_;
@@ -206,6 +282,8 @@ private:
 	ThreadMetasMap thd_metas_map_;
 	//thread corresponding semaphore
 	ThreadSemaphoreMap thd_smp_map_;
+	//
+	ThreadVectorClockMap thd_vc_map_;
 };
 
 }// namespace race

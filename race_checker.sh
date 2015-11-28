@@ -6,5 +6,5 @@
 -ignore_lib 1 -enable_djit 1 -track_racy_inst 1 \
 -static_profile static_profile/static_profile.out \
 -instrumented_lines static_profile/instrumented_lines.out -race_verify 1 \
--enable_debug 1 -debug_pthread 1 -debug_mem 1 -debug_main 1 -debug_pthread 1 -debug_malloc 1 -- \
-test/verify/verifier4
+-enable_debug 0 -debug_pthread 1 -debug_mem 1 -debug_main 1 -debug_pthread 1 -debug_malloc 1 -- \
+test/verify/verifier6
