@@ -101,12 +101,16 @@ protected:
 		uint8 ref;
 	};
 
-	enum Status {
-		INITIAL,
-		POSTPONED,
-		AVAILABLE,
-		TERMINAL
+	class BarrierMeta {
+	public:
+		typedef std::tr1::unordered_map<address_t,BarrierMeta *> Table;
+		BarrierMeta():count(0),ref(0) {}
+		~BarrierMeta() {}
+		VectorClock vc;
+		uint8 count;
+		uint8 ref;
 	};
+
 public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
@@ -195,6 +199,15 @@ public:
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
+
+	 //barrier
+  	virtual void BeforePthreadBarrierWait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t addr);
+  	virtual void AfterPthreadBarrierWait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t addr);
+  	virtual void AfterPthreadBarrierInit(thread_t curr_thd_id,
+  		timestamp_t curr_thd_clk, Inst *inst,address_t addr, unsigned int count);
+
 private:
 
 	void AllocAddrRegion(address_t addr,size_t size);
@@ -206,9 +219,11 @@ private:
 	Meta* GetMeta(address_t addr);
 	MutexMeta *GetMutexMeta(address_t addr);
 	RwlockMeta *GetRwlockMeta(address_t addr);
+	BarrierMeta *GetBarrierMeta(address_t addr);
 	void ProcessFree(Meta *meta);
   	void ProcessFree(MutexMeta *mutex_meta);
   	void ProcessFree(RwlockMeta *rwlock_meta);
+  	void ProcessFree(BarrierMeta *barrier_meta);
 
 	thread_t RandomThread(std::set<thread_t>&thd_set) {
 		srand((unsigned)time(NULL));
@@ -269,6 +284,7 @@ private:
 	Meta::Table meta_table_;
 	MutexMeta::Table mutex_meta_table_;
 	RwlockMeta::Table rwlock_meta_table_;
+	BarrierMeta::Table barrier_meta_table_;
 
 	//pospone thread set
 	PostponeThreadSet pp_thd_set_;

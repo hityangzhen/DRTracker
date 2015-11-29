@@ -39,9 +39,13 @@ Verifier::~Verifier()
 		if(iter->second)
 			ProcessFree(iter->second);
 	}
-
 	for(RwlockMeta::Table::iterator iter=rwlock_meta_table_.begin();
 		iter!=rwlock_meta_table_.end();iter++) {
+		if(iter->second)
+			ProcessFree(iter->second);
+	}
+	for(BarrierMeta::Table::iterator iter=barrier_meta_table_.begin();
+		iter!=barrier_meta_table_.end();iter++) {
 		if(iter->second)
 			ProcessFree(iter->second);
 	}
@@ -412,6 +416,45 @@ void Verifier::AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
 		AfterPthreadRwlockWrlock(curr_thd_id,curr_thd_clk,inst,addr);
 }
 
+void Verifier::AfterPthreadBarrierInit(thread_t curr_thd_id,
+  	timestamp_t curr_thd_clk, Inst *inst,address_t addr, unsigned int count)
+{
+	ScopedLock lock(internal_lock_);
+	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
+	barrier_meta->count=count;
+}
+
+void Verifier::BeforePthreadBarrierWait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
+	BlockThread(curr_thd_id);
+	//set the vector clock
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	barrier_meta->vc.Join(curr_vc);
+	barrier_meta->ref++;
+
+	//
+	if(barrier_meta->ref!=barrier_meta->count && avail_thd_set_.empty()) {
+		DEBUG_ASSERT(pp_thd_set_.size()!=0);
+		ChooseRandomThreadAfterAllUnavailable();
+	}
+}
+  	
+void Verifier::AfterPthreadBarrierWait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
+	UnblockThread(curr_thd_id);
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&barrier_meta->vc);
+	curr_vc->Increment(curr_thd_id);
+	if(--(barrier_meta->ref)==0)
+		barrier_meta->vc.Clear();
+}
+
 /**
  * multi-threaded region
  */
@@ -530,35 +573,46 @@ void Verifier::AllocAddrRegion(address_t addr,size_t size)
 	filter_->AddRegion(addr,size,false);
 }
 
-Verifier::Meta* Verifier::GetMeta(address_t iaddr)
+Verifier::Meta* Verifier::GetMeta(address_t addr)
 {
-	Meta::Table::iterator it=meta_table_.find(iaddr);
+	Meta::Table::iterator it=meta_table_.find(addr);
 	if(it==meta_table_.end()) {
-		Meta *meta=new Meta(iaddr);
-		meta_table_[iaddr]=meta;
+		Meta *meta=new Meta(addr);
+		meta_table_[addr]=meta;
 		return meta;
 	}
 	return it->second;
 }
 
-Verifier::MutexMeta* Verifier::GetMutexMeta(address_t iaddr)
+Verifier::MutexMeta* Verifier::GetMutexMeta(address_t addr)
 {
-	MutexMeta::Table::iterator it=mutex_meta_table_.find(iaddr);
+	MutexMeta::Table::iterator it=mutex_meta_table_.find(addr);
 	if(it==mutex_meta_table_.end()) {
-		MutexMeta *mutex_meta=new MutexMeta();
-		mutex_meta_table_[iaddr]=mutex_meta;
+		MutexMeta *mutex_meta=new MutexMeta;
+		mutex_meta_table_[addr]=mutex_meta;
 		return mutex_meta;
 	}
 	return it->second;
 }
 
-Verifier::RwlockMeta* Verifier::GetRwlockMeta(address_t iaddr)
+Verifier::RwlockMeta* Verifier::GetRwlockMeta(address_t addr)
 {
-	RwlockMeta::Table::iterator it=rwlock_meta_table_.find(iaddr);
+	RwlockMeta::Table::iterator it=rwlock_meta_table_.find(addr);
 	if(it==rwlock_meta_table_.end()) {
-		RwlockMeta *rwlock_meta=new RwlockMeta();
-		rwlock_meta_table_[iaddr]=rwlock_meta;
+		RwlockMeta *rwlock_meta=new RwlockMeta;
+		rwlock_meta_table_[addr]=rwlock_meta;
 		return rwlock_meta;
+	}
+	return it->second;
+}
+
+Verifier::BarrierMeta* Verifier::GetBarrierMeta(address_t addr)
+{
+	BarrierMeta::Table::iterator it=barrier_meta_table_.find(addr);
+	if(it==barrier_meta_table_.end()) {
+		BarrierMeta *barrier_meta=new BarrierMeta;
+		barrier_meta_table_[addr]=barrier_meta;
+		return barrier_meta;
 	}
 	return it->second;
 }
@@ -576,6 +630,11 @@ void Verifier::ProcessFree(MutexMeta *mutex_meta)
 void Verifier::ProcessFree(RwlockMeta *rwlock_meta)
 {
 	delete rwlock_meta;
+}
+
+void Verifier::ProcessFree(BarrierMeta *barrier_meta)
+{
+	delete barrier_meta;
 }
 
 //
