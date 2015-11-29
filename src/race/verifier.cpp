@@ -16,12 +16,12 @@ Verifier::~Verifier()
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
-
+	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
 		delete iter->second;
 	}
-	//
+	//clear metas
 	for(PStmtMetasMap::iterator iter=pstmt_metas_map_.begin();
 		iter!=pstmt_metas_map_.end();iter++) {
 		if(iter->second)
@@ -33,7 +33,7 @@ Verifier::~Verifier()
 			delete iter->second;
 	}
 
-	//
+	//clear sync metas
 	for(MutexMeta::Table::iterator iter=mutex_meta_table_.begin();
 		iter!=mutex_meta_table_.end();iter++) {
 		if(iter->second)
@@ -46,6 +46,16 @@ Verifier::~Verifier()
 	}
 	for(BarrierMeta::Table::iterator iter=barrier_meta_table_.begin();
 		iter!=barrier_meta_table_.end();iter++) {
+		if(iter->second)
+			ProcessFree(iter->second);
+	}
+	for(CondMeta::Table::iterator iter=cond_meta_table_.begin();
+		iter!=cond_meta_table_.end();iter++) {
+		if(iter->second)
+			ProcessFree(iter->second);
+	}
+	for(SemMeta::Table::iterator iter=sem_meta_table_.begin();
+		iter!=sem_meta_table_.end();iter++) {
 		if(iter->second)
 			ProcessFree(iter->second);
 	}
@@ -156,7 +166,6 @@ void Verifier::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	//current thread is blocked
 	if(avail_thd_set_.empty()) 
 		ChooseRandomThreadAfterAllUnavailable();
-	INFO_FMT_PRINT("================before pthread join avail_thd_set_.size:[%ld]\n",avail_thd_set_.size());
 }
 
 void Verifier::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
@@ -227,62 +236,35 @@ void Verifier::BeforePthreadMutexLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	// MAP_KEY_NOTFOUND_NEW(mutex_meta_table_,addr,MutexMeta);
-	// MutexMeta *mutex_meta=mutex_meta_table_[addr];
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
-
-	thread_t thd_id=mutex_meta->GetOwner();
-INFO_FMT_PRINT("================mutex lock owner:[%lx]\n",
-		thd_id);
-	//other thread has acquire the lock
-	BlockThread(curr_thd_id);
-	if(thd_id!=0) {	
-		if(avail_thd_set_.empty() && 
-			pp_thd_set_.find(thd_id)!=pp_thd_set_.end()) {
-			WakeUpPostponeThread(thd_id);
-		}
-		// else do nothing blocked
-	}
-	INFO_FMT_PRINT("================before thread mutex lock avail_thd_set_ size:[%ld]\n",
-		avail_thd_set_.size());
+	ProcessPreMutexLock(curr_thd_id,mutex_meta);
 }
 	
 void Verifier::AfterPthreadMutexLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	//set the owner
+	
 	ScopedLock lock(internal_lock_);
-	// MutexMeta *mutex_meta=mutex_meta_table_[addr];
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
-	//set the vector clock
-	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	curr_vc->Join(&mutex_meta->vc);
-
-	mutex_meta->SetOwner(curr_thd_id);
-	//if current not blocked, blk_thd_set_ and avail_thd_set_
-	//result will not be changed
-	UnblockThread(curr_thd_id);
+	ProcessPostMutexLock(curr_thd_id,mutex_meta);
 }
 
 void Verifier::BeforePthreadMutexUnlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	MutexMeta *mutex_meta=GetMutexMeta(addr);
 	//set the vector clock
-	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	mutex_meta->vc=*curr_vc;
-	curr_vc->Increment(curr_thd_id);
+	MutexMeta *mutex_meta=GetMutexMeta(addr);
+	ProcessPreMutexUnlock(curr_thd_id,mutex_meta);
 }
 
 void Verifier::AfterPthreadMutexUnlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	//clear the owner
 	ScopedLock lock(internal_lock_);
-	// MutexMeta *mutex_meta=mutex_meta_table_[addr];
+	//clear the owner
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
-	mutex_meta->SetOwner(0);
+	ProcessPostMutexUnlock(curr_thd_id,mutex_meta);
 }
 // untested
 void Verifier::BeforePthreadMutexTryLock(thread_t curr_thd_id,
@@ -434,11 +416,11 @@ void Verifier::BeforePthreadBarrierWait(thread_t curr_thd_id,
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
 	barrier_meta->vc.Join(curr_vc);
 	barrier_meta->ref++;
-
 	//
 	if(barrier_meta->ref!=barrier_meta->count && avail_thd_set_.empty()) {
-		DEBUG_ASSERT(pp_thd_set_.size()!=0);
-		ChooseRandomThreadAfterAllUnavailable();
+		if(!pp_thd_set_.empty())
+			ChooseRandomThreadAfterAllUnavailable();
+		// else go through
 	}
 }
   	
@@ -453,6 +435,98 @@ void Verifier::AfterPthreadBarrierWait(thread_t curr_thd_id,
 	curr_vc->Increment(curr_thd_id);
 	if(--(barrier_meta->ref)==0)
 		barrier_meta->vc.Clear();
+}
+
+void Verifier::BeforePthreadCondSignal(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	CondMeta *cond_meta=GetCondMeta(addr);
+	ProcessSignal(curr_thd_id,cond_meta);
+}
+
+void Verifier::BeforePthreadCondBroadcast(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst, address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	CondMeta *cond_meta=GetCondMeta(addr);
+	ProcessSignal(curr_thd_id,cond_meta);
+}
+
+void Verifier::BeforePthreadCondWait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    address_t mutex_addr)
+{
+	ScopedLock lock(internal_lock_);
+	//handle unlock
+	MutexMeta *mutex_meta=GetMutexMeta(mutex_addr);
+	ProcessPreMutexUnlock(curr_thd_id,mutex_meta);
+	ProcessPostMutexUnlock(curr_thd_id,mutex_meta);
+	//
+	CondMeta *cond_meta=GetCondMeta(cond_addr);
+	BlockThread(curr_thd_id);
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	cond_meta->wait_table[curr_thd_id]=*curr_vc;
+
+	if(avail_thd_set_.empty()) {
+		if(!pp_thd_set_.empty()) 
+			ChooseRandomThreadAfterAllUnavailable();
+		// else go through
+	}
+}
+
+void Verifier::AfterPthreadCondWait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr, 
+    address_t mutex_addr)
+{
+	ScopedLock lock(internal_lock_);
+	CondMeta *cond_meta=GetCondMeta(cond_addr);
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	//clear from the wait table
+	CondMeta::ThreadVectorClockMap::iterator witer=
+		cond_meta->wait_table.find(curr_thd_id);
+	DEBUG_ASSERT(witer!=cond_meta->wait_table.end());
+	cond_meta->wait_table.erase(witer);
+	//clear the signal info
+	CondMeta::ThreadVectorClockMap::iterator siter=
+		cond_meta->signal_table.find(curr_thd_id);
+	if(siter!=cond_meta->signal_table.end()) {
+		curr_vc->Join(&siter->second);
+		cond_meta->signal_table.erase(siter);
+	}
+	//
+	UnblockThread(curr_thd_id);
+	curr_vc->Increment(curr_thd_id);
+	//handle lock
+	MutexMeta *mutex_meta=GetMutexMeta(mutex_addr);
+	ProcessPreMutexLock(curr_thd_id,mutex_meta);
+	ProcessPostMutexLock(curr_thd_id,mutex_meta);
+}
+//untested
+void Verifier::BeforePthreadCondTimedwait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    address_t mutex_addr)
+{
+	BeforePthreadCondWait(curr_thd_id,curr_thd_clk,inst,cond_addr,mutex_addr);
+}
+//untested
+void Verifier::AfterPthreadCondTimedwait(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    address_t mutex_addr)
+{
+	AfterPthreadCondWait(curr_thd_id,curr_thd_clk,inst,cond_addr,mutex_addr);
+}
+
+void Verifier::BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,address_t addr)
+{
+
+}
+
+void Verifier::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+     Inst *inst,address_t addr)
+{
+
 }
 
 /**
@@ -519,8 +593,6 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 
 			pstmt_metas_map_[pstmt]->insert(meta);
 			thd_metas_map_[curr_thd_id]->insert(meta);
-
-INFO_FMT_PRINT("===========first pstmt:[%lx]===========\n",curr_thd_id);
 		}
 		//postpone current thread
 		PostponeThread(curr_thd_id);
@@ -558,10 +630,10 @@ void Verifier::FreeAddrRegion(address_t addr)
 
 	//for memory
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr +=unit_size_) {
-		Meta::Table::iterator it=meta_table_.find(iaddr);
-		if(it!=meta_table_.end()) {
-			ProcessFree(it->second);
-			meta_table_.erase(it);
+		Meta::Table::iterator iter=meta_table_.find(iaddr);
+		if(iter!=meta_table_.end()) {
+			ProcessFree(iter->second);
+			meta_table_.erase(iter);
 		}
 	}
 }
@@ -575,68 +647,160 @@ void Verifier::AllocAddrRegion(address_t addr,size_t size)
 
 Verifier::Meta* Verifier::GetMeta(address_t addr)
 {
-	Meta::Table::iterator it=meta_table_.find(addr);
-	if(it==meta_table_.end()) {
+	Meta::Table::iterator iter=meta_table_.find(addr);
+	if(iter==meta_table_.end()) {
 		Meta *meta=new Meta(addr);
 		meta_table_[addr]=meta;
 		return meta;
 	}
-	return it->second;
+	return iter->second;
 }
 
 Verifier::MutexMeta* Verifier::GetMutexMeta(address_t addr)
 {
-	MutexMeta::Table::iterator it=mutex_meta_table_.find(addr);
-	if(it==mutex_meta_table_.end()) {
+	MutexMeta::Table::iterator iter=mutex_meta_table_.find(addr);
+	if(iter==mutex_meta_table_.end()) {
 		MutexMeta *mutex_meta=new MutexMeta;
 		mutex_meta_table_[addr]=mutex_meta;
 		return mutex_meta;
 	}
-	return it->second;
+	return iter->second;
 }
 
 Verifier::RwlockMeta* Verifier::GetRwlockMeta(address_t addr)
 {
-	RwlockMeta::Table::iterator it=rwlock_meta_table_.find(addr);
-	if(it==rwlock_meta_table_.end()) {
+	RwlockMeta::Table::iterator iter=rwlock_meta_table_.find(addr);
+	if(iter==rwlock_meta_table_.end()) {
 		RwlockMeta *rwlock_meta=new RwlockMeta;
 		rwlock_meta_table_[addr]=rwlock_meta;
 		return rwlock_meta;
 	}
-	return it->second;
+	return iter->second;
 }
 
 Verifier::BarrierMeta* Verifier::GetBarrierMeta(address_t addr)
 {
-	BarrierMeta::Table::iterator it=barrier_meta_table_.find(addr);
-	if(it==barrier_meta_table_.end()) {
+	BarrierMeta::Table::iterator iter=barrier_meta_table_.find(addr);
+	if(iter==barrier_meta_table_.end()) {
 		BarrierMeta *barrier_meta=new BarrierMeta;
 		barrier_meta_table_[addr]=barrier_meta;
 		return barrier_meta;
 	}
-	return it->second;
+	return iter->second;
 }
 
-void Verifier::ProcessFree(Meta *meta)
+Verifier::CondMeta* Verifier::GetCondMeta(address_t addr)
+{
+	CondMeta::Table::iterator iter=cond_meta_table_.find(addr);
+	if(iter==cond_meta_table_.end()) {
+		CondMeta *cond_meta=new CondMeta;
+		cond_meta_table_[addr]=cond_meta;
+		return cond_meta;
+	}
+	return iter->second;
+}
+
+Verifier::SemMeta* Verifier::GetSemMeta(address_t addr)
+{
+	SemMeta::Table::iterator iter=sem_meta_table_.find(addr);
+	if(iter==sem_meta_table_.end()) {
+		SemMeta *sem_meta=new SemMeta;
+		sem_meta_table_[addr]=sem_meta;
+		return sem_meta;
+	}
+	return iter->second;
+}
+
+inline void Verifier::ProcessFree(Meta *meta)
 {
 	delete meta;
 }
 
-void Verifier::ProcessFree(MutexMeta *mutex_meta)
+inline void Verifier::ProcessPreMutexLock(thread_t curr_thd_id,
+	MutexMeta *mutex_meta)
+{
+	thread_t thd_id=mutex_meta->GetOwner();
+	//other thread has acquire the lock
+	BlockThread(curr_thd_id);
+	if(thd_id!=0) {	
+		if(avail_thd_set_.empty() && 
+			pp_thd_set_.find(thd_id)!=pp_thd_set_.end()) {
+			WakeUpPostponeThread(thd_id);
+		}
+		// else do nothing blocked
+	}
+}
+
+inline void Verifier::ProcessPostMutexLock(thread_t curr_thd_id,
+	MutexMeta *mutex_meta)
+{
+	//set the vector clock
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&mutex_meta->vc);
+	//set the owner
+	mutex_meta->SetOwner(curr_thd_id);
+	//if current not blocked, blk_thd_set_ and avail_thd_set_
+	//result will not be changed
+	UnblockThread(curr_thd_id);
+}
+
+inline void Verifier::ProcessPreMutexUnlock(thread_t curr_thd_id,
+	MutexMeta *mutex_meta)
+{
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	mutex_meta->vc=*curr_vc;
+	curr_vc->Increment(curr_thd_id);
+}
+
+inline void Verifier::ProcessPostMutexUnlock(thread_t curr_thd_id,
+	MutexMeta *mutex_meta)
+{
+	mutex_meta->SetOwner(0);
+}
+
+inline void Verifier::ProcessFree(MutexMeta *mutex_meta)
 {
 	delete mutex_meta;
 }
 
-void Verifier::ProcessFree(RwlockMeta *rwlock_meta)
+inline void Verifier::ProcessFree(RwlockMeta *rwlock_meta)
 {
 	delete rwlock_meta;
 }
 
-void Verifier::ProcessFree(BarrierMeta *barrier_meta)
+inline void Verifier::ProcessFree(BarrierMeta *barrier_meta)
 {
 	delete barrier_meta;
 }
 
+inline void Verifier::ProcessFree(SemMeta *sem_meta)
+{
+	delete sem_meta;
+}
+
+/**
+ * handle cond_signal and cond_broadcast
+ */
+inline 
+void Verifier::ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta)
+{
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	//merge the known waiters' vc
+	for(CondMeta::ThreadVectorClockMap::iterator iter=
+		cond_meta->wait_table.begin();iter!=cond_meta->wait_table.end();
+		iter++)
+		curr_vc->Join(&iter->second);
+	//all potential waiters should know the newest vc from the signaler
+	for(CondMeta::ThreadVectorClockMap::iterator iter=
+		cond_meta->signal_table.begin();
+		iter!=cond_meta->signal_table.end();iter++)
+		iter->second=*curr_vc;
+}
+
+inline void Verifier::ProcessFree(CondMeta *cond_meta)
+{
+	delete cond_meta;
+}
 //
 void Verifier::HandleNoRace(thread_t curr_thd_id)
 {

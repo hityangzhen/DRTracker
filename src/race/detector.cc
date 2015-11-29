@@ -391,7 +391,7 @@ void Detector::AfterPthreadCondTimedwait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
     address_t mutex_addr)
 {
-	AfterPthreadCondTimedwait(curr_thd_id,curr_thd_clk,inst,cond_addr,
+	AfterPthreadCondwait(curr_thd_id,curr_thd_clk,inst,cond_addr,
 		mutex_addr);
 }
 

@@ -111,6 +111,25 @@ protected:
 		uint8 ref;
 	};
 
+	class CondMeta {
+	public:
+		typedef std::tr1::unordered_map<address_t,CondMeta *> Table;
+		typedef std::map<thread_t,VectorClock> ThreadVectorClockMap;
+		CondMeta() {}
+		~CondMeta() {}
+
+		ThreadVectorClockMap wait_table;
+		ThreadVectorClockMap signal_table;
+	};
+
+	class SemMeta {
+	public:
+		typedef std::tr1::unordered_map<address_t,SemMeta *> Table;
+		SemMeta() {}
+		~SemMeta() {}
+		VectorClock vc;
+	};
+
 public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
@@ -200,7 +219,7 @@ public:
 	virtual void AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
 
-	 //barrier
+	//barrier
   	virtual void BeforePthreadBarrierWait(thread_t curr_thd_id,
     	timestamp_t curr_thd_clk, Inst *inst,address_t addr);
   	virtual void AfterPthreadBarrierWait(thread_t curr_thd_id,
@@ -208,6 +227,29 @@ public:
   	virtual void AfterPthreadBarrierInit(thread_t curr_thd_id,
   		timestamp_t curr_thd_clk, Inst *inst,address_t addr, unsigned int count);
 
+  	//condition-variable
+  	virtual void BeforePthreadCondSignal(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t addr);
+  	virtual void BeforePthreadCondBroadcast(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk,Inst *inst, address_t addr);
+  	virtual void BeforePthreadCondWait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    	address_t mutex_addr);
+  	virtual void AfterPthreadCondWait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr, 
+    	address_t mutex_addr);
+  	virtual void BeforePthreadCondTimedwait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    	address_t mutex_addr);
+  	virtual void AfterPthreadCondTimedwait(thread_t curr_thd_id,
+    	timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
+    	address_t mutex_addr);
+
+  	//semaphore
+  	virtual void BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    	Inst *inst,address_t addr);
+  	virtual void AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+      	Inst *inst,address_t addr);
 private:
 
 	void AllocAddrRegion(address_t addr,size_t size);
@@ -217,14 +259,28 @@ private:
 	void Process(thread_t curr_thd_id,address_t addr,Inst *inst,RaceEventType type);
 
 	Meta* GetMeta(address_t addr);
-	MutexMeta *GetMutexMeta(address_t addr);
-	RwlockMeta *GetRwlockMeta(address_t addr);
-	BarrierMeta *GetBarrierMeta(address_t addr);
 	void ProcessFree(Meta *meta);
+
+  	MutexMeta *GetMutexMeta(address_t addr);
+  	void ProcessPreMutexLock(thread_t curr_thd_id,MutexMeta *mutex_meta);
+  	void ProcessPostMutexLock(thread_t curr_thd_id,MutexMeta *mutex_meta);
+  	void ProcessPreMutexUnlock(thread_t curr_thd_id,MutexMeta *mutex_meta);
+  	void ProcessPostMutexUnlock(thread_t curr_thd_id,MutexMeta *mutex_meta);
   	void ProcessFree(MutexMeta *mutex_meta);
+
+  	RwlockMeta *GetRwlockMeta(address_t addr);
   	void ProcessFree(RwlockMeta *rwlock_meta);
+
+  	BarrierMeta *GetBarrierMeta(address_t addr);
   	void ProcessFree(BarrierMeta *barrier_meta);
 
+  	CondMeta *GetCondMeta(address_t addr);
+  	void ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta);
+  	void ProcessFree(CondMeta *cond_meta);
+
+  	SemMeta *GetSemMeta(address_t addr);
+  	void ProcessFree(SemMeta *sem_meta);
+		
 	thread_t RandomThread(std::set<thread_t>&thd_set) {
 		srand((unsigned)time(NULL));
 		//simply iterate
@@ -285,6 +341,8 @@ private:
 	MutexMeta::Table mutex_meta_table_;
 	RwlockMeta::Table rwlock_meta_table_;
 	BarrierMeta::Table barrier_meta_table_;
+	CondMeta::Table cond_meta_table_;
+	SemMeta::Table sem_meta_table_;
 
 	//pospone thread set
 	PostponeThreadSet pp_thd_set_;
