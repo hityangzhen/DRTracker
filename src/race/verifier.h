@@ -125,9 +125,10 @@ protected:
 	class SemMeta {
 	public:
 		typedef std::tr1::unordered_map<address_t,SemMeta *> Table;
-		SemMeta() {}
+		SemMeta():count(0) {}
 		~SemMeta() {}
 		VectorClock vc;
+		uint8 count;
 	};
 
 public:
@@ -246,8 +247,12 @@ public:
     	address_t mutex_addr);
 
   	//semaphore
+  	virtual void AfterSemInit(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+  		Inst *inst,address_t addr,unsigned int value);
   	virtual void BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     	Inst *inst,address_t addr);
+  	virtual void BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+  		Inst *inst,address_t addr);
   	virtual void AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
       	Inst *inst,address_t addr);
 private:

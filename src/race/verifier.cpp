@@ -418,7 +418,7 @@ void Verifier::BeforePthreadBarrierWait(thread_t curr_thd_id,
 	barrier_meta->ref++;
 	//
 	if(barrier_meta->ref!=barrier_meta->count && avail_thd_set_.empty()) {
-		if(!pp_thd_set_.empty())
+		// if(!pp_thd_set_.empty())
 			ChooseRandomThreadAfterAllUnavailable();
 		// else go through
 	}
@@ -469,7 +469,7 @@ void Verifier::BeforePthreadCondWait(thread_t curr_thd_id,
 	cond_meta->wait_table[curr_thd_id]=*curr_vc;
 
 	if(avail_thd_set_.empty()) {
-		if(!pp_thd_set_.empty()) 
+		// if(!pp_thd_set_.empty()) 
 			ChooseRandomThreadAfterAllUnavailable();
 		// else go through
 	}
@@ -517,16 +517,51 @@ void Verifier::AfterPthreadCondTimedwait(thread_t curr_thd_id,
 	AfterPthreadCondWait(curr_thd_id,curr_thd_clk,inst,cond_addr,mutex_addr);
 }
 
+void Verifier::AfterSemInit(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+  	Inst *inst,address_t addr,unsigned int value)
+{
+	ScopedLock lock(internal_lock_);
+	SemMeta *sem_meta=GetSemMeta(addr);
+	sem_meta->count=value;
+}
+
 void Verifier::BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t addr)
 {
+	ScopedLock lock(internal_lock_);
+	SemMeta *sem_meta=GetSemMeta(addr);
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	sem_meta->vc.Join(curr_vc);
+	//this step we move from the AfterSemPost to BeforeSemPost
+	//and this will not affect the correctness
+	curr_vc->Increment(curr_thd_id);
+	sem_meta->count++;
+}
 
+void Verifier::BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+  	Inst *inst,address_t addr)
+{
+	ScopedLock lock(internal_lock_);
+	SemMeta *sem_meta=GetSemMeta(addr);
+	BlockThread(curr_thd_id);
+	//
+	if(--(sem_meta->count)<0) {
+		if(avail_thd_set_.empty()) {
+			// if(!pp_thd_set_.empty())
+				ChooseRandomThreadAfterAllUnavailable();
+			// else go through
+		}
+	}
 }
 
 void Verifier::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
      Inst *inst,address_t addr)
 {
-
+	ScopedLock lock(internal_lock_);
+	SemMeta *sem_meta=GetSemMeta(addr);
+	UnblockThread(curr_thd_id);
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&sem_meta->vc);
 }
 
 /**
