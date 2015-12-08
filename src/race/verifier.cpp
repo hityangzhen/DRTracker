@@ -770,13 +770,8 @@ inline void Verifier::ProcessPostMutexLock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	//set the vector clock
-	//if lastThread(m)==t
-	//current thread's vc greater or equal than mutex's vc
-	//do not need comparison and join to thread's vc
-	if(curr_thd_id!=mutex_meta->lastrls_thd_id) {
-		VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-		curr_vc->Join(&mutex_meta->vc);	
-	}
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&mutex_meta->vc);	
 	//set the owner
 	mutex_meta->SetOwner(curr_thd_id);
 	//if current not blocked, blk_thd_set_ and avail_thd_set_
@@ -788,26 +783,9 @@ inline void Verifier::ProcessPreMutexUnlock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	//set the vector clock
-	//lastThread(m)==t && lastLock(t)==m or
-	//lastThread(m)!=t && lastLock(t)==m
-	//current thread's vc smaller or equal than mutex's vc
-	//do not need comparison and assignment to mutex's vc and only
-	//need to update current entry of the vc
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	bool flag=false;
-	if(thd_lastrls_mtx_map_.find(curr_thd_id)!=
-		thd_lastrls_mtx_map_.end()) {
-		if(thd_lastrls_mtx_map_[curr_thd_id]==mutex_meta &&
-			mutex_meta->vc.GetClock(curr_thd_id) >= 
-			curr_vc->GetClock(curr_thd_id))
-			flag=true;
-	}
-	if(!flag) {
-		mutex_meta->vc=*curr_vc;
-		thd_lastrls_mtx_map_[curr_thd_id]=mutex_meta;		
-	}
+	mutex_meta->vc=*curr_vc;
 	curr_vc->Increment(curr_thd_id);
-	mutex_meta->lastrls_thd_id=curr_thd_id;
 }
 
 inline void Verifier::ProcessPostMutexUnlock(thread_t curr_thd_id,

@@ -69,8 +69,7 @@ protected:
 	class MutexMeta {
 	public:
 		typedef std::tr1::unordered_map<address_t,MutexMeta *> Table;
-		typedef std::tr1::unordered_map<thread_t,MutexMeta *> ThreadMutexMetaMap;
-		MutexMeta() : thd_id(0),lastrls_thd_id(0) {}
+		MutexMeta() : thd_id(0) {}
 		~MutexMeta() {}
 		thread_t GetOwner() {
 			return thd_id;
@@ -80,8 +79,6 @@ protected:
 		}
 		thread_t thd_id;
 		VectorClock vc;
-		//last released thread
-		thread_t lastrls_thd_id;
 	};
 
 	class RwlockMeta {
@@ -368,8 +365,6 @@ private:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
-	//thread last released mutex meta mapping
-	MutexMeta::ThreadMutexMetaMap thd_lastrls_mtx_map_;
 };
 
 }// namespace race
