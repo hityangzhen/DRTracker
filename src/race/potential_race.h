@@ -99,6 +99,9 @@ public:
 		}
 	}
 
+	bool HasFullyVerified(PStmt *first_pstmt) {
+		return pstmt_map_.find(first_pstmt)==pstmt_map_.end() ;
+	}
 private:
 	PStmtMap pstmt_map_;
 	PStmtSet pstmt_set_;

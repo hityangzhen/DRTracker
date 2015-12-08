@@ -13,7 +13,7 @@ pthread_rwlock_t rwlock3=PTHREAD_RWLOCK_INITIALIZER;
 void* foo1(void *)
 {
 	pthread_rwlock_rdlock(&rwlock1);
-	pthread_rwlock_rdlock(&rwlock2);
+	pthread_rwlock_wrlock(&rwlock2);
 	pthread_rwlock_rdlock(&rwlock3);
 
 	cout<<tmp<<endl;

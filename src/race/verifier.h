@@ -69,7 +69,8 @@ protected:
 	class MutexMeta {
 	public:
 		typedef std::tr1::unordered_map<address_t,MutexMeta *> Table;
-		MutexMeta() : thd_id(0){}
+		typedef std::tr1::unordered_map<thread_t,MutexMeta *> ThreadMutexMetaMap;
+		MutexMeta() : thd_id(0),lastrls_thd_id(0) {}
 		~MutexMeta() {}
 		thread_t GetOwner() {
 			return thd_id;
@@ -79,6 +80,8 @@ protected:
 		}
 		thread_t thd_id;
 		VectorClock vc;
+		//last released thread
+		thread_t lastrls_thd_id;
 	};
 
 	class RwlockMeta {
@@ -128,7 +131,7 @@ protected:
 		SemMeta():count(0) {}
 		~SemMeta() {}
 		VectorClock vc;
-		uint8 count;
+		int8 count; //should consider negative
 	};
 
 public:
@@ -324,6 +327,7 @@ private:
 	void HandleNoRace(thread_t curr_thd_id);
 
 	void ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas);
+
 	//need to be protected
 	void BlockThread(thread_t curr_thd_id) {
 		blk_thd_set_.insert(curr_thd_id);
@@ -333,6 +337,7 @@ private:
 		blk_thd_set_.erase(curr_thd_id);
 		avail_thd_set_.insert(curr_thd_id);
 	}
+
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
 	PRaceDB *prace_db_;
@@ -361,8 +366,10 @@ private:
 	ThreadMetasMap thd_metas_map_;
 	//thread corresponding semaphore
 	ThreadSemaphoreMap thd_smp_map_;
-	//
+	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
+	//thread last released mutex meta mapping
+	MutexMeta::ThreadMutexMetaMap thd_lastrls_mtx_map_;
 };
 
 }// namespace race
