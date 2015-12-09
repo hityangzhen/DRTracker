@@ -54,8 +54,11 @@ void Profiler::HandlePreSetup()
 	// verifier_analyzer_=new Verifier;
 	// verifier_analyzer_->Register();
 
-	verifier_sl_analyzer_=new VerifierSl();
-	verifier_sl_analyzer_->Register();
+	// verifier_sl_analyzer_=new VerifierSl();
+	// verifier_sl_analyzer_->Register();
+
+	verifier_ml_analyzer_=new VerifierMl();
+	verifier_ml_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -139,10 +142,16 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_analyzer_);
 	// }
 
-	if(verifier_sl_analyzer_->Enabled()) {
+	// if(verifier_sl_analyzer_->Enabled()) {
+	// 	LoadPStmts();
+	// 	verifier_sl_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+	// 	AddAnalyzer(verifier_sl_analyzer_);
+	// }
+
+	if(verifier_ml_analyzer_->Enabled()) {
 		LoadPStmts();
-		verifier_sl_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
-		AddAnalyzer(verifier_sl_analyzer_);
+		verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+		AddAnalyzer(verifier_ml_analyzer_);
 	}
 
 	//==============================end============================

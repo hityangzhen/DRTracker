@@ -185,6 +185,7 @@ namespace race
 	};
 
 	typedef enum {
+		NONE,
 		WRITETOREAD,
 		WRITETOWRITE,
 		READTOWRITE,

@@ -25,12 +25,6 @@ void VerifierSl::Register()
 	knob_->RegisterInt("ss_vec_len","max length of the snapshot vector","10");
 }
 
-void VerifierSl::Setup(Mutex *internal_lock,Mutex *verify_lock,PRaceDB *prace_db)
-{
-	Verifier::Setup(internal_lock,verify_lock,prace_db);
-	ss_vec_len=knob_->ValueInt("ss_vec_len");
-}
-
 Verifier::Meta *VerifierSl::GetMeta(address_t addr)
 {
 	Meta::Table::iterator iter=meta_table_.find(addr);
@@ -71,10 +65,10 @@ inline void VerifierSl::ProcessPostRwlockRdlock(thread_t curr_thd_id,
 	UnblockThread(curr_thd_id);
 	rwlock_meta->AddRdlockOwner(curr_thd_id);
 	//do the same work like mutex_lock
-	if(thd_lkcnt_map_.find(curr_thd_id)==thd_lkcnt_map_.end())
-		thd_lkcnt_map_[curr_thd_id]=1;
+	if(thd_rdlkcnt_map_.find(curr_thd_id)==thd_rdlkcnt_map_.end())
+		thd_rdlkcnt_map_[curr_thd_id]=1;
 	else
-		++thd_lkcnt_map_[curr_thd_id];	
+		++thd_rdlkcnt_map_[curr_thd_id];	
 }
 
 inline void VerifierSl::ProcessPostRwlockWrlock(thread_t curr_thd_id,
@@ -95,9 +89,61 @@ inline void VerifierSl::ProcessPreRwlockUnlock(thread_t curr_thd_id,
 {
 	//do not change the vector clock
 	//do the same work like mutex_unlock
-	DEBUG_ASSERT(thd_lkcnt_map_.find(curr_thd_id)!=thd_lkcnt_map_.end()
-		&& thd_lkcnt_map_[curr_thd_id]>0);
-	--thd_lkcnt_map_[curr_thd_id];
+	if(rwlock_meta->GetWrlockOwner()==curr_thd_id) {
+		DEBUG_ASSERT(thd_lkcnt_map_.find(curr_thd_id)!=thd_lkcnt_map_.end()
+			&& thd_lkcnt_map_[curr_thd_id]>0);
+		--thd_lkcnt_map_[curr_thd_id];	
+	} else {
+		DEBUG_ASSERT(thd_rdlkcnt_map_.find(curr_thd_id)!=thd_rdlkcnt_map_.end()
+			&& thd_rdlkcnt_map_[curr_thd_id]>0);
+		--thd_rdlkcnt_map_[curr_thd_id];
+	}
+}
+
+void VerifierSl::AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,RaceEventType type,Inst *inst) 
+{
+	//calculate the lockcount
+	if(thd_lkcnt_map_.find(curr_thd_id)==thd_lkcnt_map_.end())
+		thd_lkcnt_map_[curr_thd_id]=0;
+	if(thd_rdlkcnt_map_.find(curr_thd_id)==thd_rdlkcnt_map_.end())
+		thd_rdlkcnt_map_[curr_thd_id]=0;
+	SlMetaSnapshot *slmeta_ss=new SlMetaSnapshot(curr_thd_clk,type,inst);
+	slmeta_ss->lock_count=thd_lkcnt_map_[curr_thd_id];
+	slmeta_ss->rdlock_count=thd_rdlkcnt_map_[curr_thd_id];
+	meta->AddMetaSnapshot(curr_thd_id,slmeta_ss);
+}
+
+RaceType VerifierSl::HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
+	thread_t curr_thd_id,RaceEventType curr_type) 
+{
+	SlMetaSnapshot *slmeta_ss=dynamic_cast<SlMetaSnapshot *>(meta_ss);
+	timestamp_t thd_clk=thd_vc_map_[curr_thd_id]->GetClock(thd_id);
+
+	if(thd_lkcnt_map_.find(curr_thd_id)==thd_lkcnt_map_.end())
+		thd_lkcnt_map_[curr_thd_id]=0;
+	if(thd_rdlkcnt_map_.find(curr_thd_id)==thd_rdlkcnt_map_.end())
+		thd_rdlkcnt_map_[curr_thd_id]=0;
+	
+	if(curr_type==RACE_EVENT_WRITE && slmeta_ss->thd_clk>thd_clk) {
+		if(slmeta_ss->type==RACE_EVENT_WRITE && 
+			(thd_lkcnt_map_[curr_thd_id]==0 || slmeta_ss->lock_count==0)) {
+			return WRITETOWRITE;
+		}
+		if(slmeta_ss->type==RACE_EVENT_READ &&
+			(thd_lkcnt_map_[curr_thd_id]==0 || 
+				(slmeta_ss->lock_count==0 && slmeta_ss->rdlock_count==0))) {
+			return READTOWRITE;
+		}
+	}
+	else if(curr_type==RACE_EVENT_READ && slmeta_ss->thd_clk>thd_clk) {
+		if(slmeta_ss->type==RACE_EVENT_WRITE &&
+			((thd_rdlkcnt_map_[curr_thd_id]==0 && 
+				thd_lkcnt_map_[curr_thd_id]==0) || slmeta_ss->lock_count==0)) {
+			return WRITETOREAD;
+		}
+	}
+	return NONE;
 }
 
 } //namespace race

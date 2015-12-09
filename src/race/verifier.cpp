@@ -6,6 +6,8 @@
 
 namespace race
 {
+//static initialize
+size_t Verifier::ss_vec_len=0;
 
 Verifier::Verifier():internal_lock_(NULL),verify_lock_(NULL),prace_db_(NULL),
 	filter_(NULL),unit_size_(4)
@@ -70,6 +72,7 @@ void Verifier::Register()
 {
 	knob_->RegisterBool("race_verify","whether enable the race verify","0");
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes","4");
+	knob_->RegisterInt("ss_vec_len","max length of the snapshot vector","0");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,PRaceDB *prace_db)
@@ -84,6 +87,10 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,PRaceDB *prace_db)
 	desc_.SetHookPthreadFunc();
 	desc_.SetHookMallocFunc();
 	desc_.SetHookAtomicInst();
+	if(knob_->ValueInt("ss_vec_len")<1)
+		ss_vec_len=1;
+	else
+		ss_vec_len=knob_->ValueInt("ss_vec_len");
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -137,8 +144,8 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 
 void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
-INFO_FMT_PRINT("=============thread exit,postpone set size:[%ld]==============\n",
-pp_thd_set_.size());
+INFO_FMT_PRINT("=============thread:[%lx] exit,postpone set size:[%ld]==============\n",
+curr_thd_id,pp_thd_set_.size());
 	ScopedLock lock(internal_lock_);
 
 	//clear current thread accessed metas
@@ -651,7 +658,7 @@ Verifier::MutexMeta* Verifier::GetMutexMeta(address_t addr)
 {
 	MutexMeta::Table::iterator iter=mutex_meta_table_.find(addr);
 	if(iter==mutex_meta_table_.end()) {
-		MutexMeta *mutex_meta=new MutexMeta;
+		MutexMeta *mutex_meta=new MutexMeta(addr);
 		mutex_meta_table_[addr]=mutex_meta;
 		return mutex_meta;
 	}
@@ -662,7 +669,7 @@ Verifier::RwlockMeta* Verifier::GetRwlockMeta(address_t addr)
 {
 	RwlockMeta::Table::iterator iter=rwlock_meta_table_.find(addr);
 	if(iter==rwlock_meta_table_.end()) {
-		RwlockMeta *rwlock_meta=new RwlockMeta;
+		RwlockMeta *rwlock_meta=new RwlockMeta(addr);
 		rwlock_meta_table_[addr]=rwlock_meta;
 		return rwlock_meta;
 	}
@@ -1055,27 +1062,50 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 						MetaSnapshot *meta_ss=*iiter;
 						if(meta->RacedInstPair(meta_ss->inst,inst))
 							continue ;
-						if(type==RACE_EVENT_WRITE && HistoryRaceCondition(meta_ss,
-							iter->first,curr_thd_id)) {
-							flag=true;
-							if(meta_ss->type==RACE_EVENT_WRITE)
+INFO_FMT_PRINT("=================history race meta:[%lx]===================\n",curr_thd_id);
+						switch(HistoryRace(meta_ss,iter->first,curr_thd_id,type)) {
+							case WRITETOWRITE:
 								PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
 									meta_ss->inst,curr_thd_id,inst);
-							else
+								flag=true;
+								meta->AddRacedInstPair(meta_ss->inst,inst);
+								break;
+							case READTOWRITE:
 								PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 									meta_ss->inst,curr_thd_id,inst);
-							meta->AddRacedInstPair(meta_ss->inst,inst);
-						}
-
-						if(type==RACE_EVENT_READ && HistoryRaceCondition(meta_ss,
-							iter->first,curr_thd_id)) {
-							if(meta_ss->type==RACE_EVENT_WRITE) {
 								flag=true;
+								meta->AddRacedInstPair(meta_ss->inst,inst);
+								break;
+							case WRITETOREAD:
 								PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
 									meta_ss->inst,curr_thd_id,inst);
+								flag=true;
 								meta->AddRacedInstPair(meta_ss->inst,inst);
-							}
+								break;
+							default:
+								break;
 						}
+						// if(type==RACE_EVENT_WRITE && HistoryRaceCondition(meta_ss,
+						// 	iter->first,curr_thd_id,RACE_EVENT_WRITE)) {
+						// 	flag=true;
+						// 	if(meta_ss->type==RACE_EVENT_WRITE)
+						// 		PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
+						// 			meta_ss->inst,curr_thd_id,inst);
+						// 	else
+						// 		PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
+						// 			meta_ss->inst,curr_thd_id,inst);
+						// 	meta->AddRacedInstPair(meta_ss->inst,inst);
+						// }
+
+						// if(type==RACE_EVENT_READ && HistoryRaceCondition(meta_ss,
+						// 	iter->first,curr_thd_id,RACE_EVENT_READ)) {
+						// 	if(meta_ss->type==RACE_EVENT_WRITE) {
+						// 		flag=true;
+						// 		PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
+						// 			meta_ss->inst,curr_thd_id,inst);
+						// 		meta->AddRacedInstPair(meta_ss->inst,inst);
+						// 	}
+						// }
 					}
 				}
 			}

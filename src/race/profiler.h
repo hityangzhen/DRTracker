@@ -19,6 +19,7 @@
 #include "race/potential_race.h"
 #include "race/verifier.h"
 #include "race/verifier_sl.h"
+#include "race/verifier_ml.h"
 
 namespace race{
 
@@ -40,7 +41,8 @@ public:
 			simplelock_plus_analyzer_(NULL),
 			prace_db_(NULL),
 			verifier_analyzer_(NULL),
-			verifier_sl_analyzer_(NULL)
+			verifier_sl_analyzer_(NULL),
+			verifier_ml_analyzer_(NULL)
 	{}
 	~Profiler() {}
 
@@ -70,6 +72,7 @@ protected:
 	PRaceDB *prace_db_;
 	Verifier *verifier_analyzer_;
 	VerifierSl *verifier_sl_analyzer_;
+	VerifierMl *verifier_ml_analyzer_;
 	//==============================end============================	
 private:
 	void LoadPStmts();

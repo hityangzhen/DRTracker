@@ -24,6 +24,8 @@ namespace race
 
 class Verifier:public Analyzer {
 protected:
+	//limit the snapshot vector length
+	static size_t ss_vec_len; 
 	//meta access snapshot
 	class MetaSnapshot {
 	public:
@@ -40,8 +42,8 @@ protected:
 	class Meta {
 	public:
 		typedef std::tr1::unordered_map<address_t,Meta *> Table;
-		typedef std::tr1::unordered_set<Inst *> InstSet;
-		explicit Meta(address_t a):addr(a) {}
+		typedef std::tr1::unordered_set<uint64> RacedInstPairSet;
+		explicit Meta(address_t a):addr(a),index(0) {}
 		virtual ~Meta() {
 			for(MetaSnapshotsMap::iterator iter=meta_ss_map.begin();
 				iter!=meta_ss_map.end();iter++) {
@@ -54,32 +56,50 @@ protected:
 			}
 		}
 		void AddRacedInstPair(Inst *i1,Inst *i2) {
-			raced_inst_set.insert(i1);
-			raced_inst_set.insert(i2);
+			uint64 x=reinterpret_cast<uint64>(i1);
+			uint64 y=reinterpret_cast<uint64>(i2);
+			raced_inst_pair_set.insert(x+(y<<32));
+			raced_inst_pair_set.insert(y+(x<<32));
 		}
 		bool RacedInstPair(Inst *i1,Inst *i2) {
-			return raced_inst_set.find(i1)!=raced_inst_set.end() &&
-					raced_inst_set.find(i2)!=raced_inst_set.end();
+			uint64 x=reinterpret_cast<uint64>(i1);
+			uint64 y=reinterpret_cast<uint64>(i2);
+			return raced_inst_pair_set.find(x+(y<<32))!=raced_inst_pair_set.end();
 		}
-		virtual void AddMetaSnapshot(thread_t thd_id,MetaSnapshot *meta_ss) {
-			// MetaSnapshot *meta_ss=new MetaSnapshot(thd_clk,t,i);
-			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
-				meta_ss_map[thd_id]=new MetaSnapshotVector;
-			meta_ss_map[thd_id]->push_back(meta_ss);
+		void AddMetaSnapshot(thread_t thd_id,MetaSnapshot *meta_ss) {
+			if(Verifier::ss_vec_len==0) {
+				if(meta_ss_map.find(thd_id)==meta_ss_map.end())
+					meta_ss_map[thd_id]=new MetaSnapshotVector;
+				meta_ss_map[thd_id]->push_back(meta_ss);
+			} else {
+				if(meta_ss_map.find(thd_id)==meta_ss_map.end())
+					meta_ss_map[thd_id]=
+						new MetaSnapshotVector(Verifier::ss_vec_len,NULL);
+				//too many snapshots
+				if(meta_ss_map[thd_id]->size()==Verifier::ss_vec_len)
+					index=0;
+				(*meta_ss_map[thd_id])[index++]=meta_ss;
+			} 
 		}
-		virtual MetaSnapshot* LastestMetaSnapshot(thread_t thd_id) {
-			return meta_ss_map[thd_id]->back();
+		MetaSnapshot* LastestMetaSnapshot(thread_t thd_id) {
+			if(Verifier::ss_vec_len==0)
+				return meta_ss_map[thd_id]->back();
+			else {
+				int tmp=(index+Verifier::ss_vec_len-1)%Verifier::ss_vec_len;
+				return (*meta_ss_map[thd_id])[tmp];
+			}
 		}
 		address_t addr;
-		InstSet raced_inst_set;
+		RacedInstPairSet raced_inst_pair_set;
 		MetaSnapshotsMap meta_ss_map;
+		int index;
 	};
 
 	//data for mutex 
 	class MutexMeta {
 	public:
 		typedef std::tr1::unordered_map<address_t,MutexMeta *> Table;
-		MutexMeta() : thd_id(0) {}
+		MutexMeta(address_t a) : addr(a),thd_id(0) {}
 		~MutexMeta() {}
 		thread_t GetOwner() {
 			return thd_id;
@@ -87,6 +107,7 @@ protected:
 		void SetOwner(thread_t t) {
 			thd_id=t;
 		}
+		address_t addr;
 		thread_t thd_id;
 		VectorClock vc;
 	};
@@ -95,7 +116,7 @@ protected:
 	public:
 		typedef std::tr1::unordered_map<address_t,RwlockMeta *> Table;
 		typedef std::set<thread_t> ThreadSet; 
-		RwlockMeta():wrlock_thd_id(0),ref(0) {}
+		RwlockMeta(address_t a) : addr(a),wrlock_thd_id(0),ref(0) {}
 		~RwlockMeta() {}
 		void AddRdlockOwner(thread_t t) { rdlock_thd_set.insert(t); }
 		void RemoveRdlockOwner(thread_t t) { rdlock_thd_set.erase(t); }
@@ -103,6 +124,7 @@ protected:
 		bool HasRdlockOwner() { return !rdlock_thd_set.empty(); }
 		void SetWrlockOwner(thread_t t) { wrlock_thd_id=t; }
 		thread_t GetWrlockOwner() { return wrlock_thd_id; }
+		address_t addr;
 		ThreadSet rdlock_thd_set;
 		thread_t wrlock_thd_id;
 
@@ -340,10 +362,17 @@ protected:
 		meta->AddMetaSnapshot(curr_thd_id,meta_ss);
 	}
 	//only consider timestamp,curr_type is unused
-	virtual bool HistoryRaceCondition(MetaSnapshot *meta_ss,thread_t thd_id,
-		thread_t curr_thd_id) {
+	virtual RaceType HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
+		thread_t curr_thd_id,RaceEventType curr_type) {
 		timestamp_t thd_clk=thd_vc_map_[curr_thd_id]->GetClock(thd_id);
-		return meta_ss->thd_clk > thd_clk;
+		if(meta_ss->thd_clk > thd_clk) {
+			if(curr_type==RACE_EVENT_WRITE)
+				return meta_ss->type==RACE_EVENT_WRITE ? 
+					WRITETOWRITE : READTOWRITE;
+			else if(meta_ss->type==RACE_EVENT_WRITE)
+				return WRITETOREAD;
+		}
+		return NONE;
 	}
 	void WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds);
 	void WakeUpPostponeThread(thread_t thd_id);
