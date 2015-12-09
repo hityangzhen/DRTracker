@@ -18,6 +18,7 @@ srcs += \
   race/simple_lock.cc \
   race/simplelock_plus.cc \
   race/verifier.cpp \
+  race/verifier_sl.cpp \
   race/profiler.cpp \
   race/profiler_main.cpp \
   race/race.cc \
@@ -28,6 +29,7 @@ pintools += \
 
 race_profiler_objs := \
   race/verifier.o \
+  race/verifier_sl.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \
@@ -49,6 +51,7 @@ race_objs := \
   race/simple_lock.o \
   race/simplelock_plus.o \
   race/verifier.o \
+  race/verifier_sl.o \
   race/race.o \
   race/race.pb.o
   

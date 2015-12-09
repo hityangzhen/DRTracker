@@ -16,8 +16,9 @@
 #include "race/multilock_hb.h"
 #include "race/simple_lock.h"
 #include "race/simplelock_plus.h"
-#include "race/verifier.h"
 #include "race/potential_race.h"
+#include "race/verifier.h"
+#include "race/verifier_sl.h"
 
 namespace race{
 
@@ -38,7 +39,8 @@ public:
 			simple_lock_analyzer_(NULL),
 			simplelock_plus_analyzer_(NULL),
 			prace_db_(NULL),
-			verifier_analyzer_(NULL)
+			verifier_analyzer_(NULL),
+			verifier_sl_analyzer_(NULL)
 	{}
 	~Profiler() {}
 
@@ -67,8 +69,10 @@ protected:
 	//======================data race verifier=====================
 	PRaceDB *prace_db_;
 	Verifier *verifier_analyzer_;
+	VerifierSl *verifier_sl_analyzer_;
 	//==============================end============================	
 private:
+	void LoadPStmts();
 	DISALLOW_COPY_CONSTRUCTORS(Profiler);
 };
 

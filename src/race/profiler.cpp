@@ -51,8 +51,11 @@ void Profiler::HandlePreSetup()
 	//==============================end============================
 
 	//======================data race verifier=====================
-	verifier_analyzer_=new Verifier;
-	verifier_analyzer_->Register();
+	// verifier_analyzer_=new Verifier;
+	// verifier_analyzer_->Register();
+
+	verifier_sl_analyzer_=new VerifierSl();
+	verifier_sl_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -130,30 +133,18 @@ void Profiler::HandlePostSetup()
 	//==============================end============================
 
 	//======================data race verifier=====================
-	if(verifier_analyzer_->Enabled()) {
-		//load the pstmts into prace_db
-		prace_db_=new PRaceDB;
-		char buffer[100];
-		const char *delimit=" ", *fn=NULL, *l=NULL;
-		PStmt *pstmt=NULL;
-		for(std::tr1::unordered_set<std::string>::iterator iter=
-			static_profile_.begin();iter!=static_profile_.end();
-			iter++) {
-			iter->copy(buffer,iter->size(),0);
-			buffer[iter->size()]='\0';
-			fn=strtok(buffer,delimit);
-			l=strtok(NULL,delimit);
-			DEBUG_ASSERT(fn && l);
-			pstmt=prace_db_->GetPStmtAndCreate(fn,l);
-			fn=strtok(NULL,delimit);				
-			l=strtok(NULL,delimit);
-			DEBUG_ASSERT(fn && l);
-			prace_db_->BuildRelationMapping(pstmt,fn,l);
-		}
+	// if(verifier_analyzer_->Enabled()) {
+	// 	LoadPStmts();
+	// 	verifier_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+	// 	AddAnalyzer(verifier_analyzer_);
+	// }
 
-		verifier_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
-		AddAnalyzer(verifier_analyzer_);
+	if(verifier_sl_analyzer_->Enabled()) {
+		LoadPStmts();
+		verifier_sl_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+		AddAnalyzer(verifier_sl_analyzer_);
 	}
+
 	//==============================end============================
 }
 
@@ -201,6 +192,29 @@ void Profiler::HandleProgramExit()
 	//======================data race verifier=====================
 	delete prace_db_;
 	//==============================end============================	
+}
+
+void Profiler::LoadPStmts()
+{
+	//load the pstmts into prace_db
+	prace_db_=new PRaceDB;
+	char buffer[100];
+	const char *delimit=" ", *fn=NULL, *l=NULL;
+	PStmt *pstmt=NULL;
+	for(std::tr1::unordered_set<std::string>::iterator iter=
+		static_profile_.begin();iter!=static_profile_.end();
+		iter++) {
+		iter->copy(buffer,iter->size(),0);
+		buffer[iter->size()]='\0';
+		fn=strtok(buffer,delimit);
+		l=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && l);
+		pstmt=prace_db_->GetPStmtAndCreate(fn,l);
+		fn=strtok(NULL,delimit);				
+		l=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && l);
+		prace_db_->BuildRelationMapping(pstmt,fn,l);
+	}
 }
 
 }// namespace race

@@ -137,7 +137,8 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 
 void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
-INFO_FMT_PRINT("=============postpone set size:[%ld]==============\n",pp_thd_set_.size());
+INFO_FMT_PRINT("=============thread exit,postpone set size:[%ld]==============\n",
+pp_thd_set_.size());
 	ScopedLock lock(internal_lock_);
 
 	//clear current thread accessed metas
@@ -285,15 +286,7 @@ void Verifier::BeforePthreadRwlockRdlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-	thread_t wrlock_thd_id=rwlock_meta->GetWrlockOwner();
-	BlockThread(curr_thd_id);
-
-	if(wrlock_thd_id!=0) {
-		if(avail_thd_set_.empty() && 
-			pp_thd_set_.find(wrlock_thd_id)!=pp_thd_set_.end()) {
-			WakeUpPostponeThread(wrlock_thd_id);
-		}
-	}
+	ProcessPreRwlockRdlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::AfterPthreadRwlockRdlock(thread_t curr_thd_id,
@@ -301,13 +294,7 @@ void Verifier::AfterPthreadRwlockRdlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-	//set the vector clock
-	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	curr_vc->Join(&rwlock_meta->vc);
-
-	UnblockThread(curr_thd_id);
-	rwlock_meta->AddRdlockOwner(curr_thd_id);
-	rwlock_meta->ref++;
+	ProcessPostRwlockRdlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::BeforePthreadRwlockWrlock(thread_t curr_thd_id,
@@ -315,34 +302,15 @@ void Verifier::BeforePthreadRwlockWrlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-
-	RwlockMeta::ThreadSet *rdlock_thd_set=rwlock_meta->GetRdlockOwners();
-	BlockThread(curr_thd_id);
-	//here we only consider the simple scene
-	//there are no other 
-	if(rwlock_meta->HasRdlockOwner()) {
-		if(avail_thd_set_.empty()) {
-			//we wakeup all readers
-			for(RwlockMeta::ThreadSet::iterator iter=rdlock_thd_set->begin();
-				iter!=rdlock_thd_set->end();iter++) {
-				WakeUpPostponeThread(*iter);
-			}
-		}
-	}
+	ProcessPreRwlockWrlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::AfterPthreadRwlockWrlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	UnblockThread(curr_thd_id);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-	//set the vector clock
-	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	curr_vc->Join(&rwlock_meta->vc);
-
-	rwlock_meta->SetWrlockOwner(curr_thd_id);
-	rwlock_meta->ref++;
+	ProcessPostRwlockWrlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::BeforePthreadRwlockUnlock(thread_t curr_thd_id,
@@ -350,16 +318,7 @@ void Verifier::BeforePthreadRwlockUnlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
-	rwlock_meta->ref--;
-	rwlock_meta->wait_vc.Join(curr_vc);
-
-	if(rwlock_meta->ref==0) {
-		rwlock_meta->vc=rwlock_meta->wait_vc;
-		rwlock_meta->wait_vc.Clear();
-	}
-
-	curr_vc->Increment(curr_thd_id);
+	ProcessPreRwlockUnlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::AfterPthreadRwlockUnlock(thread_t curr_thd_id,
@@ -367,9 +326,7 @@ void Verifier::AfterPthreadRwlockUnlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
-	//we do not know rdlock or wrlock
-	rwlock_meta->SetWrlockOwner(0);
-	rwlock_meta->RemoveRdlockOwner(curr_thd_id);
+	ProcessPostRwlockUnlock(curr_thd_id,rwlock_meta);
 }
 
 void Verifier::BeforePthreadRwlockTryRdlock(thread_t curr_thd_id,
@@ -610,7 +567,6 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 			first_pstmts.insert(iter->first);
 		}
 	}
-
 	//first accessed stmt of the potentail stmt pair,needed to be postponed 
 	if(first_pstmts.empty()) {
 		//add metas to pstmt accessed metas
@@ -624,7 +580,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 			DEBUG_ASSERT(meta);
 			//add snapshot
 			timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
-			meta->AddMetaSnapshot(curr_thd_id,MetaSnapshot(curr_thd_clk,type,inst));
+			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst);
 
 			pstmt_metas_map_[pstmt]->insert(meta);
 			thd_metas_map_[curr_thd_id]->insert(meta);
@@ -792,6 +748,85 @@ inline void Verifier::ProcessPostMutexUnlock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	mutex_meta->SetOwner(0);
+}
+
+inline void Verifier::ProcessPreRwlockRdlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	thread_t wrlock_thd_id=rwlock_meta->GetWrlockOwner();
+	BlockThread(curr_thd_id);
+
+	if(wrlock_thd_id!=0) {
+		if(avail_thd_set_.empty() && 
+			pp_thd_set_.find(wrlock_thd_id)!=pp_thd_set_.end()) {
+			WakeUpPostponeThread(wrlock_thd_id);
+		}
+	}
+}
+
+inline void Verifier::ProcessPostRwlockRdlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	//set the vector clock
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&rwlock_meta->vc);
+
+	UnblockThread(curr_thd_id);
+	rwlock_meta->AddRdlockOwner(curr_thd_id);
+	rwlock_meta->ref++;
+}
+
+inline void Verifier::ProcessPreRwlockWrlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	RwlockMeta::ThreadSet *rdlock_thd_set=rwlock_meta->GetRdlockOwners();
+	BlockThread(curr_thd_id);
+	//here we only consider the simple scene
+	//there are no other 
+	if(rwlock_meta->HasRdlockOwner()) {
+		if(avail_thd_set_.empty()) {
+			//we wakeup all readers
+			for(RwlockMeta::ThreadSet::iterator iter=rdlock_thd_set->begin();
+				iter!=rdlock_thd_set->end();iter++) {
+				WakeUpPostponeThread(*iter);
+			}
+		}
+	}
+}
+  	
+inline void Verifier::ProcessPostRwlockWrlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	UnblockThread(curr_thd_id);
+	//set the vector clock
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	curr_vc->Join(&rwlock_meta->vc);
+
+	rwlock_meta->SetWrlockOwner(curr_thd_id);
+	rwlock_meta->ref++;
+}
+
+inline void Verifier::ProcessPreRwlockUnlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
+	rwlock_meta->ref--;
+	rwlock_meta->wait_vc.Join(curr_vc);
+
+	if(rwlock_meta->ref==0) {
+		rwlock_meta->vc=rwlock_meta->wait_vc;
+		rwlock_meta->wait_vc.Clear();
+	}
+
+	curr_vc->Increment(curr_thd_id);
+}
+
+inline void Verifier::ProcessPostRwlockUnlock(thread_t curr_thd_id,
+	RwlockMeta *rwlock_meta)
+{
+	//we do not know rdlock or wrlock
+	rwlock_meta->SetWrlockOwner(0);
+	rwlock_meta->RemoveRdlockOwner(curr_thd_id);
 }
 
 inline void Verifier::ProcessFree(MutexMeta *mutex_meta)
@@ -983,61 +1018,62 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 					iter->second!=NULL && 
 					iter->second->find(meta)!=iter->second->end()) {
 					//traverse current thread's last snapshot
-					MetaSnapshot &meta_ss=meta->meta_ss_map[iter->first]->back();
+					MetaSnapshot *meta_ss=meta->LastestMetaSnapshot(iter->first);
 					//filter raced inst pair
-					if(meta->RacedInstPair(meta_ss.inst,inst))
+					if(meta->RacedInstPair(meta_ss->inst,inst))
 						continue ;
 					if(type==RACE_EVENT_WRITE) {
 						flag=true;
 						pp_thds.insert(iter->first);
-						if(meta_ss.type==RACE_EVENT_WRITE)
+						if(meta_ss->type==RACE_EVENT_WRITE)
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
-								meta_ss.inst,curr_thd_id,inst);
+								meta_ss->inst,curr_thd_id,inst);
 						else
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
-								meta_ss.inst,curr_thd_id,inst);
-						meta->AddRacedInstPair(meta_ss.inst,inst);
+								meta_ss->inst,curr_thd_id,inst);
+						meta->AddRacedInstPair(meta_ss->inst,inst);
 					}
 					else if(type==RACE_EVENT_READ) {
-						if(meta_ss.type==RACE_EVENT_WRITE) {
+						if(meta_ss->type==RACE_EVENT_WRITE) {
 							flag=true;
 							pp_thds.insert(iter->first);
 							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
-								meta_ss.inst,curr_thd_id,inst);
-							meta->AddRacedInstPair(meta_ss.inst,inst);
+								meta_ss->inst,curr_thd_id,inst);
+							meta->AddRacedInstPair(meta_ss->inst,inst);
 						}
 					}
 				}
 				//
 				if(iter->first!=curr_thd_id && iter->second!=NULL && 
 					iter->second->find(meta)!=iter->second->end()) {
-
-					//traverse current thread history snapshot
+					//traverse thread history snapshot
 					MetaSnapshotVector *meta_ss_vec=meta->meta_ss_map[iter->first];
-					timestamp_t thd_clk=
-					 	thd_vc_map_[curr_thd_id]->GetClock(iter->first);
+					//if we use the cyclic vector should consider the non-full vector
+					//so we should ensure if current entry is NULL
 					for(MetaSnapshotVector::iterator iiter=meta_ss_vec->begin();
-						iiter!=meta_ss_vec->end();iiter++) {
-						if(meta->RacedInstPair(iiter->inst,inst))
+						*iiter && iiter!=meta_ss_vec->end();iiter++) {
+						MetaSnapshot *meta_ss=*iiter;
+						if(meta->RacedInstPair(meta_ss->inst,inst))
 							continue ;
-
-						if(type==RACE_EVENT_WRITE && iiter->thd_clk>thd_clk) {
+						if(type==RACE_EVENT_WRITE && HistoryRaceCondition(meta_ss,
+							iter->first,curr_thd_id)) {
 							flag=true;
-							if(iiter->type==RACE_EVENT_WRITE)
+							if(meta_ss->type==RACE_EVENT_WRITE)
 								PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
-									iiter->inst,curr_thd_id,inst);
+									meta_ss->inst,curr_thd_id,inst);
 							else
 								PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
-									iiter->inst,curr_thd_id,inst);
-							meta->AddRacedInstPair(iiter->inst,inst);
+									meta_ss->inst,curr_thd_id,inst);
+							meta->AddRacedInstPair(meta_ss->inst,inst);
 						}
 
-						if(type==RACE_EVENT_READ && iiter->thd_clk>thd_clk) {
-							if(iiter->type==RACE_EVENT_WRITE) {
+						if(type==RACE_EVENT_READ && HistoryRaceCondition(meta_ss,
+							iter->first,curr_thd_id)) {
+							if(meta_ss->type==RACE_EVENT_WRITE) {
 								flag=true;
 								PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
-									iiter->inst,curr_thd_id,inst);
-								meta->AddRacedInstPair(iiter->inst,inst);
+									meta_ss->inst,curr_thd_id,inst);
+								meta->AddRacedInstPair(meta_ss->inst,inst);
 							}
 						}
 					}
@@ -1045,7 +1081,7 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 			}
  		}
  		//add current thread's snapshot
- 		meta->AddMetaSnapshot(curr_thd_id,MetaSnapshot(curr_thd_clk,type,inst));
+ 		AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst);
 		second_metas->insert(meta);
 		thd_metas_map_[curr_thd_id]->insert(meta);
 	}

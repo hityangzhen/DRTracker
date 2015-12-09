@@ -25,14 +25,16 @@ namespace race
 class Verifier:public Analyzer {
 protected:
 	//meta access snapshot
-	struct MetaSnapshot {
+	class MetaSnapshot {
+	public:
 		MetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i):thd_clk(clk),type(t),
-		inst(i) {}
+			inst(i) {}
+		virtual ~MetaSnapshot() {}
 		timestamp_t thd_clk;
 		RaceEventType type;
 		Inst *inst;
 	};
-	typedef std::vector<MetaSnapshot> MetaSnapshotVector;
+	typedef std::vector<MetaSnapshot *> MetaSnapshotVector;
 	typedef std::tr1::unordered_map<thread_t,MetaSnapshotVector *> MetaSnapshotsMap;
 	//data for memory unit
 	class Meta {
@@ -42,15 +44,15 @@ protected:
 		explicit Meta(address_t a):addr(a) {}
 		virtual ~Meta() {
 			for(MetaSnapshotsMap::iterator iter=meta_ss_map.begin();
-				iter!=meta_ss_map.end();iter++)
+				iter!=meta_ss_map.end();iter++) {
+				//clear all meta snapshots
+				MetaSnapshotVector *meta_ss_vec=iter->second;
+				for(MetaSnapshotVector::iterator iiter=meta_ss_vec->begin();
+					iiter!=meta_ss_vec->end();iiter++)
+					delete *iiter;
 				delete iter->second;
+			}
 		}
-		void AddMetaSnapshot(thread_t thd_id,MetaSnapshot meta_ss) {
-			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
-				meta_ss_map[thd_id]=new MetaSnapshotVector;
-			meta_ss_map[thd_id]->push_back(meta_ss);
-		}
-
 		void AddRacedInstPair(Inst *i1,Inst *i2) {
 			raced_inst_set.insert(i1);
 			raced_inst_set.insert(i2);
@@ -59,7 +61,15 @@ protected:
 			return raced_inst_set.find(i1)!=raced_inst_set.end() &&
 					raced_inst_set.find(i2)!=raced_inst_set.end();
 		}
-
+		virtual void AddMetaSnapshot(thread_t thd_id,MetaSnapshot *meta_ss) {
+			// MetaSnapshot *meta_ss=new MetaSnapshot(thd_clk,t,i);
+			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
+				meta_ss_map[thd_id]=new MetaSnapshotVector;
+			meta_ss_map[thd_id]->push_back(meta_ss);
+		}
+		virtual MetaSnapshot* LastestMetaSnapshot(thread_t thd_id) {
+			return meta_ss_map[thd_id]->back();
+		}
 		address_t addr;
 		InstSet raced_inst_set;
 		MetaSnapshotsMap meta_ss_map;
@@ -255,7 +265,7 @@ public:
   		Inst *inst,address_t addr);
   	virtual void AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
       	Inst *inst,address_t addr);
-private:
+protected:
 
 	void AllocAddrRegion(address_t addr,size_t size);
 	void FreeAddrRegion(address_t addr);
@@ -263,17 +273,23 @@ private:
 	bool FilterAccess(address_t addr) {return filter_->Filter(addr,true);}
 	void Process(thread_t curr_thd_id,address_t addr,Inst *inst,RaceEventType type);
 
-	Meta* GetMeta(address_t addr);
+	virtual Meta* GetMeta(address_t addr);
 	void ProcessFree(Meta *meta);
 
   	MutexMeta *GetMutexMeta(address_t addr);
   	void ProcessPreMutexLock(thread_t curr_thd_id,MutexMeta *mutex_meta);
-  	void ProcessPostMutexLock(thread_t curr_thd_id,MutexMeta *mutex_meta);
-  	void ProcessPreMutexUnlock(thread_t curr_thd_id,MutexMeta *mutex_meta);
+  	virtual void ProcessPostMutexLock(thread_t curr_thd_id,MutexMeta *mutex_meta);
+  	virtual void ProcessPreMutexUnlock(thread_t curr_thd_id,MutexMeta *mutex_meta);
   	void ProcessPostMutexUnlock(thread_t curr_thd_id,MutexMeta *mutex_meta);
   	void ProcessFree(MutexMeta *mutex_meta);
 
   	RwlockMeta *GetRwlockMeta(address_t addr);
+  	void ProcessPreRwlockRdlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
+  	virtual void ProcessPostRwlockRdlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
+  	void ProcessPreRwlockWrlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
+  	virtual void ProcessPostRwlockWrlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
+  	virtual void ProcessPreRwlockUnlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
+  	void ProcessPostRwlockUnlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
   	void ProcessFree(RwlockMeta *rwlock_meta);
 
   	BarrierMeta *GetBarrierMeta(address_t addr);
@@ -317,6 +333,18 @@ private:
 	void RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_addr,
 		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,RaceEventType type,
 		PostponeThreadSet &pp_thds);
+	//wrapper function
+	virtual void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
+		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst) {
+		MetaSnapshot *meta_ss=new MetaSnapshot(curr_thd_clk,type,inst);
+		meta->AddMetaSnapshot(curr_thd_id,meta_ss);
+	}
+	//only consider timestamp,curr_type is unused
+	virtual bool HistoryRaceCondition(MetaSnapshot *meta_ss,thread_t thd_id,
+		thread_t curr_thd_id) {
+		timestamp_t thd_clk=thd_vc_map_[curr_thd_id]->GetClock(thd_id);
+		return meta_ss->thd_clk > thd_clk;
+	}
 	void WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds);
 	void WakeUpPostponeThread(thread_t thd_id);
 	void PostponeThread(thread_t curr_thd_id);
@@ -365,6 +393,8 @@ private:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
+private:
+	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };
 
 }// namespace race
