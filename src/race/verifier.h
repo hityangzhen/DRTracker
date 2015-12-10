@@ -3,6 +3,7 @@
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 #include <ctime>
+#include <deque>
 #include "race/potential_race.h"
 #include "core/basictypes.h"
 #include "core/filter.h"
@@ -25,7 +26,7 @@ namespace race
 class Verifier:public Analyzer {
 protected:
 	//limit the snapshot vector length
-	static size_t ss_vec_len; 
+	static size_t ss_deq_len; 
 	//meta access snapshot
 	class MetaSnapshot {
 	public:
@@ -36,8 +37,8 @@ protected:
 		RaceEventType type;
 		Inst *inst;
 	};
-	typedef std::vector<MetaSnapshot *> MetaSnapshotVector;
-	typedef std::tr1::unordered_map<thread_t,MetaSnapshotVector *> MetaSnapshotsMap;
+	typedef std::deque<MetaSnapshot *> MetaSnapshotDeque;
+	typedef std::tr1::unordered_map<thread_t,MetaSnapshotDeque *> MetaSnapshotsMap;
 	//data for memory unit
 	class Meta {
 	public:
@@ -48,9 +49,9 @@ protected:
 			for(MetaSnapshotsMap::iterator iter=meta_ss_map.begin();
 				iter!=meta_ss_map.end();iter++) {
 				//clear all meta snapshots
-				MetaSnapshotVector *meta_ss_vec=iter->second;
-				for(MetaSnapshotVector::iterator iiter=meta_ss_vec->begin();
-					iiter!=meta_ss_vec->end();iiter++)
+				MetaSnapshotDeque *meta_ss_deq=iter->second;
+				for(MetaSnapshotDeque::iterator iiter=meta_ss_deq->begin();
+					iiter!=meta_ss_deq->end();iiter++)
 					delete *iiter;
 				delete iter->second;
 			}
@@ -67,27 +68,33 @@ protected:
 			return raced_inst_pair_set.find(x+(y<<32))!=raced_inst_pair_set.end();
 		}
 		void AddMetaSnapshot(thread_t thd_id,MetaSnapshot *meta_ss) {
-			if(Verifier::ss_vec_len==0) {
-				if(meta_ss_map.find(thd_id)==meta_ss_map.end())
-					meta_ss_map[thd_id]=new MetaSnapshotVector;
-				meta_ss_map[thd_id]->push_back(meta_ss);
-			} else {
-				if(meta_ss_map.find(thd_id)==meta_ss_map.end())
-					meta_ss_map[thd_id]=
-						new MetaSnapshotVector(Verifier::ss_vec_len,NULL);
-				//too many snapshots
-				if(meta_ss_map[thd_id]->size()==Verifier::ss_vec_len)
-					index=0;
-				(*meta_ss_map[thd_id])[index++]=meta_ss;
-			} 
+			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
+				meta_ss_map[thd_id]=new MetaSnapshotDeque;
+			//too many snapshots
+			if(meta_ss_map[thd_id]->size()==Verifier::ss_deq_len)
+				meta_ss_map[thd_id]->pop_front();
+			meta_ss_map[thd_id]->push_back(meta_ss);
 		}
 		MetaSnapshot* LastestMetaSnapshot(thread_t thd_id) {
-			if(Verifier::ss_vec_len==0)
-				return meta_ss_map[thd_id]->back();
-			else {
-				int tmp=(index+Verifier::ss_vec_len-1)%Verifier::ss_vec_len;
-				return (*meta_ss_map[thd_id])[tmp];
+			if(meta_ss_map.find(thd_id)==meta_ss_map.end() || 
+				meta_ss_map[thd_id]->size()==0)
+				return NULL;
+			return meta_ss_map[thd_id]->back();
+		}
+		bool RecentMetaSnapshot(thread_t thd_id,timestamp_t thd_clk,Inst *inst) {
+			if(meta_ss_map.find(thd_id)==meta_ss_map.end() ||
+				meta_ss_map[thd_id]->size()==0)
+				return false;
+			//munally set the previous step is 3;
+			MetaSnapshotDeque *meta_ss_deq=meta_ss_map[thd_id];
+			size_t step=meta_ss_deq->size()<3?meta_ss_deq->size():3;
+
+			for(MetaSnapshotDeque::reverse_iterator iter=meta_ss_deq->rbegin();
+				iter!=meta_ss_deq->rbegin()+step;++iter) {
+				if((*iter)->inst==inst && (*iter)->thd_clk==thd_clk)
+					return true;
 			}
+			return false;
 		}
 		address_t addr;
 		RacedInstPairSet raced_inst_pair_set;

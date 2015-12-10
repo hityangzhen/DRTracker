@@ -23,7 +23,7 @@ void *thread2(void *tmp)
 }
 void *thread3(void *tmp)
 {
-	sleep(3);
+	//sleep(3);
 	pthread_mutex_lock(&m);
 	*(int *)tmp = 3;
 	for(int i=0;i<1000000;i++) ;

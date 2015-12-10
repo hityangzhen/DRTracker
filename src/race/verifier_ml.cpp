@@ -28,7 +28,7 @@ void VerifierMl::Register()
 		"0");
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
 		"4");
-	knob_->RegisterInt("ss_vec_len","max length of the snapshot vector","10");
+	knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
 }
 
 Verifier::Meta* VerifierMl::GetMeta(address_t addr)
