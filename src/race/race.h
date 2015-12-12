@@ -86,6 +86,7 @@ namespace race
 	private:
 		friend class RaceDB;
 		friend class RaceReport;
+		friend class Race;
 		DISALLOW_COPY_CONSTRUCTORS(RaceEvent);
 	};
 
@@ -99,7 +100,11 @@ namespace race
 
 	protected:
 		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL) {}
-		~Race() {}
+		~Race() {
+			for(RaceEvent::Vec::iterator iter=event_vec_.begin();
+				iter!=event_vec_.end();iter++)
+				delete *iter;
+		}
 
 		int exec_id_;
 		address_t addr_;
@@ -121,6 +126,8 @@ namespace race
 		~RaceDB();
 
 		Race *CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
+			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
+		void RemoveRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
 			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
 		void SetRacyInst(Inst *inst,bool locking);
 		bool RacyInst(Inst *inst,bool locking);
@@ -152,8 +159,6 @@ namespace race
 		StaticRace *FindStaticRace(StaticRace::id_t id,bool locking);
 		StaticRace *GetStaticRace(StaticRaceEvent *e0,StaticRaceEvent *e1,
 			bool locking);
-
-
 
 		Mutex *internal_lock_;
 		StaticRaceEvent::id_t curr_static_event_id_;

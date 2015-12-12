@@ -10,11 +10,16 @@
 #include "core/filter.h"
 #include "race/race.h"
 #include "core/lock_set.h"
+#include "race/adhoc_sync.h"
+#include "core/loop.h"
 
 namespace race {
 
 class Detector:public Analyzer {
 public:
+  typedef std::map<int,Loop> LoopTable;
+  typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
+
 	Detector();
 	virtual ~Detector();
 
@@ -199,17 +204,21 @@ protected:
   virtual void ProcessFree(BarrierMeta *meta);
   virtual void ProcessFree(SemMeta *meta);
 
+  void LoadLoops();
+
 	Mutex *internal_lock_;
 	RaceDB *race_db_;
-
 	address_t unit_size_;
 	RegionFilter *filter_;
+  AdhocSync *adhoc_sync_;
 	//
 	MutexMeta::Table mutex_meta_table_;
 	Meta::Table meta_table_;
   CondMeta::Table cond_meta_table_;
   BarrierMeta::Table barrier_meta_table_;
   SemMeta::Table sem_meta_table_;
+
+  LoopMap loop_map_;
 
 	std::map<thread_t,VectorClock *> curr_vc_map_;
 	std::map<thread_t,bool> atomic_map_; //whether executing atomic inst.

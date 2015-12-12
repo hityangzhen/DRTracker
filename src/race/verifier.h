@@ -71,8 +71,11 @@ protected:
 			if(meta_ss_map.find(thd_id)==meta_ss_map.end())
 				meta_ss_map[thd_id]=new MetaSnapshotDeque;
 			//too many snapshots
-			if(meta_ss_map[thd_id]->size()==Verifier::ss_deq_len)
+			if(meta_ss_map[thd_id]->size()==Verifier::ss_deq_len) {
+				MetaSnapshot *meta_ss=meta_ss_map[thd_id]->front();
 				meta_ss_map[thd_id]->pop_front();
+				delete meta_ss;
+			}
 			meta_ss_map[thd_id]->push_back(meta_ss);
 		}
 		MetaSnapshot* LastestMetaSnapshot(thread_t thd_id) {
@@ -169,7 +172,6 @@ protected:
 		VectorClock vc;
 		int8 count; //should consider negative
 	};
-
 public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
@@ -403,7 +405,7 @@ protected:
 	Mutex *verify_lock_;
 	PRaceDB *prace_db_;
 	RegionFilter *filter_;
-
+	
 	address_t unit_size_;
 	//random thread id
 	thread_t rdm_thd_id_;

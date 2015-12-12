@@ -22,7 +22,7 @@ void* task2(void* param) {
 
 void* task3(void *param) {
 	sem_wait(&sem);
-	tester=1;
+	tester=3;
 	return NULL;
 } 
 

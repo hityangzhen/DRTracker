@@ -184,7 +184,6 @@ void SimpleLock::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 	//INFO_FMT_PRINT("process write:%lx\n",meta->addr);
 	SlMeta *sl_meta=dynamic_cast<SlMeta*>(meta);
 	DEBUG_ASSERT(sl_meta);
-
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	timestamp_t curr_clk=curr_vc->GetClock(curr_thd_id);
 	//

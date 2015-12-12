@@ -6,3 +6,5 @@
 in test/verify dir.**
 
 *	when use verify function, you should update the target in race_checker.sh
+
+**loop\_range\_\*.out files contain each loop's start line and end line info.**

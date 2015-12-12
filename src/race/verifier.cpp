@@ -3,7 +3,7 @@
 #include "race/verifier.h"
 #include "core/log.h"
 #include "core/pin_util.h"
-
+#include <time.h>
 namespace race
 {
 //static initialize
@@ -11,13 +11,14 @@ size_t Verifier::ss_deq_len=0;
 
 Verifier::Verifier():internal_lock_(NULL),verify_lock_(NULL),prace_db_(NULL),
 	filter_(NULL),unit_size_(4)
-	{}
+{}
 
 Verifier::~Verifier() 
 {
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
+
 	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
@@ -893,14 +894,14 @@ INFO_PRINT("=================handle no race===================\n");
 void Verifier::HandleRace(PostponeThreadSet *pp_thds,thread_t curr_thd_id)
 {
 INFO_PRINT("=================handle race===================\n");
-	//clear raced info whenever
-	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
-		iter++) {
-INFO_FMT_PRINT("+++++++++++++++++++pp_thd_id:[%lx]+++++++++++++++++\n",*iter);
-		//clear raced metas
-		// delete thd_metas_map_[*iter];
-		// thd_metas_map_[*iter]=NULL;
-	}
+// 	//clear raced info whenever
+// 	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
+// 		iter++) {
+// INFO_FMT_PRINT("+++++++++++++++++++pp_thd_id:[%lx]+++++++++++++++++\n",*iter);
+// 		//clear raced metas
+// 		// delete thd_metas_map_[*iter];
+// 		// thd_metas_map_[*iter]=NULL;
+// 	}
 
 	// delete thd_metas_map_[curr_thd_id];
 	// thd_metas_map_[curr_thd_id]=NULL;
@@ -943,7 +944,16 @@ INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",cur
 	InternalUnlock();
 	VerifyUnlock();
 	//semahore wait
-	thd_smp_map_[curr_thd_id]->Wait();
+	struct timespec ts;
+	clock_gettime(CLOCK_REALTIME,&ts);
+	ts.tv_sec+=2;
+	thd_smp_map_[curr_thd_id]->TimedWait(&ts);
+	//
+	InternalLock();
+	pp_thd_set_.erase(curr_thd_id);
+	avail_thd_set_.insert(curr_thd_id);
+	InternalUnlock();
+
 INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
 }
 
@@ -962,8 +972,8 @@ INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",th
 inline void Verifier::WakeUpPostponeThread(thread_t thd_id)
 {
 	thd_smp_map_[thd_id]->Post();
-	pp_thd_set_.erase(thd_id);
-	avail_thd_set_.insert(thd_id);
+	// pp_thd_set_.erase(thd_id);
+	// avail_thd_set_.insert(thd_id);
 }
 
 void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds)
@@ -1021,7 +1031,7 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 		Meta *meta=GetMeta(iaddr);
 		if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 			continue;
-INFO_FMT_PRINT("+++++++++++++++++++++raced meta:[%lx]+++++++++++++++++++++\n",curr_thd_id);
+// INFO_FMT_PRINT("+++++++++++++++++++++raced meta:[%lx]+++++++++++++++++++++\n",curr_thd_id);
 		//corresponding pstmt access the shared meta
 		if(first_metas->find(meta)!=first_metas->end()) {
 			for(ThreadMetasMap::iterator iter=thd_metas_map_.begin();
@@ -1109,7 +1119,6 @@ INFO_FMT_PRINT("+++++++++++++++++++++raced meta:[%lx]+++++++++++++++++++++\n",cu
 			pstmt_metas_map_.erase(second_pstmt);
 		}
 	}
-		
 }
 
 void Verifier::PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,

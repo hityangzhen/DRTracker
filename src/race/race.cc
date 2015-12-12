@@ -40,6 +40,16 @@ RaceDB::RaceDB(Mutex *lock):internal_lock_(lock),
 RaceDB::~RaceDB()
 {
 	delete internal_lock_;
+
+	for(StaticRaceEvent::Map::iterator iter=static_event_table_.begin();
+		iter!=static_event_table_.end();iter++)
+		delete iter->second;
+	for(StaticRace::Map::iterator iter=static_race_table_.begin();
+		iter!=static_race_table_.end();iter++)
+		delete iter->second;
+	for(Race::Vec::iterator iter=race_vec_.begin();iter!=race_vec_.end();
+		iter++)
+		delete *iter;
 }
 
 Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,
@@ -67,6 +77,42 @@ Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,
 	//put self into race vector
 	race_vec_.push_back(race);
 	return race;
+}
+
+void RaceDB::RemoveRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
+	thread_t t1,Inst *i1,RaceEventType p1,bool locking)
+{
+	ScopedLock lock(internal_lock_,locking);
+	StaticRaceEvent *static_event_0=FindStaticRaceEvent(i0,p0,locking);
+	StaticRaceEvent *static_event_1=FindStaticRaceEvent(i1,p1,locking);
+	if(static_event_0 && static_event_1) {
+		StaticRace *static_race=FindStaticRace(static_event_0,static_event_1,
+			locking);
+		if(static_race) {
+			//remove the static race
+			static_race_table_.erase(static_race->id_);
+			StaticRace::Vec &static_race_vec=static_race_index_[static_race->Hash()];
+			for(StaticRace::Vec::iterator iter=static_race_vec.begin();
+				iter!=static_race_vec.end();)
+				if(*iter==static_race)
+					iter=static_race_vec.erase(iter);
+				else
+					iter++;
+			Race *race=NULL;
+			//remove the race
+			for(Race::Vec::iterator iter=race_vec_.begin();iter!=race_vec_.end();) {
+				if((*iter)->static_race_==static_race) {
+					race=*iter;
+					iter=race_vec_.erase(iter);					
+				}
+				else
+					iter++;
+			}
+			if(race)
+				delete race;
+			delete static_race;
+		}
+	}
 }
 
 void RaceDB::SetRacyInst(Inst *inst,bool locking)

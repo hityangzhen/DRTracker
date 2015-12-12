@@ -8,15 +8,22 @@ namespace race {
 
 Detector::Detector():internal_lock_(NULL),race_db_(NULL),
 	unit_size_(4),filter_(NULL),vc_mem_size_(0)
-	{}
+{
+	adhoc_sync_=new AdhocSync;
+}
 
 Detector::~Detector() 
 {
 	delete internal_lock_;
 	delete filter_;
+	delete adhoc_sync_;
 	for(std::map<thread_t,VectorClock *>::iterator it=curr_vc_map_.begin();
 		it!=curr_vc_map_.end();)
 		curr_vc_map_.erase(it++);
+	//clear loops
+	for(LoopMap::iterator iter=loop_map_.begin();iter!=loop_map_.end();
+		iter++)
+		delete iter->second;
 }
 
 void Detector::SaveStatistics(const char *file_name)
@@ -83,6 +90,8 @@ void Detector::PrintDebugRaceInfo(const char *detector_name,RaceType race_type,
 void Detector::Register()
 {
 	knob_->RegisterInt("unit_size_","the monitoring granularity in bytes","4");
+	knob_->RegisterStr("loop_range_lines","the loop's start line and end line",
+		"0");
 }
 
 void Detector::Setup(Mutex *lock,RaceDB *race_db)
@@ -97,6 +106,10 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 	desc_.SetHookPthreadFunc();
 	desc_.SetHookMallocFunc();
 	desc_.SetHookAtomicInst();
+
+	//load loop range lines
+	if(knob_->ValueStr("loop_range_lines").compare("0")!=0)
+		LoadLoops();
 }
 
 void Detector::ImageLoad(Image *image, address_t low_addr, address_t high_addr,
@@ -165,11 +178,31 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
+	
+	//handle the read in loop
+	std::string file_name=inst->GetFileName();
+	size_t found=file_name.find_last_of("/");
+	file_name=file_name.substr(found+1);
+	int line=inst->GetLine();
+	AdhocSync::WriteMeta *wr_meta=NULL;
+	if(loop_map_.find(file_name)!=loop_map_.end()) {
+		LoopTable::iterator iter=loop_map_[file_name]->lower_bound(line);
+		if(iter->second.InLoop(line)) {
+			INFO_PRINT("=================loop read==============\n");
+			wr_meta=adhoc_sync_->
+				WriteReadSync(curr_thd_id,inst,start_addr,end_addr);
+		}
+	}
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
 		DEBUG_ASSERT(meta);
 		ProcessRead(curr_thd_id,meta,inst);
+		if(wr_meta) {
+			INFO_PRINT("=================adhoc identify==============\n");
+			race_db_->RemoveRace(iaddr,wr_meta->lastest_thd_id,wr_meta->inst,
+				RACE_EVENT_WRITE,curr_thd_id,inst,RACE_EVENT_READ,false);
+		}
 	}
 }
 
@@ -192,6 +225,8 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
+	//keep the lastest write
+	adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,inst,start_addr,end_addr);
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
@@ -391,7 +426,7 @@ void Detector::AfterPthreadCondTimedwait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
     address_t mutex_addr)
 {
-	AfterPthreadCondwait(curr_thd_id,curr_thd_clk,inst,cond_addr,
+	AfterPthreadCondWait(curr_thd_id,curr_thd_clk,inst,cond_addr,
 		mutex_addr);
 }
 
@@ -709,6 +744,27 @@ void Detector::ProcessAfterSemWait(thread_t curr_thd_id,SemMeta *meta)
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	DEBUG_ASSERT(curr_vc);
 	curr_vc->Join(&meta->vc);
+}
+
+void Detector::LoadLoops()
+{
+	const char *delimit=" ",*fn=NULL,*sl=NULL,*el=NULL;
+	char buffer[200];
+	std::fstream in(knob_->ValueStr("loop_range_lines").c_str(),
+		std::ios::in);
+	while(!in.eof()) {
+		in.getline(buffer,200,'\n');
+		fn=strtok(buffer,delimit);
+		sl=strtok(NULL,delimit);
+		el=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && sl && el);
+		std::string fn_str(fn);
+		if(loop_map_.find(fn_str)==loop_map_.end())
+			loop_map_[fn_str]=new LoopTable;
+		int sl_int=atoi(sl),el_int=atoi(el);
+		loop_map_[fn_str]->insert(std::make_pair(sl_int,Loop(sl_int,el_int)));
+	}
+	in.close();
 }
 
 } //namespace race

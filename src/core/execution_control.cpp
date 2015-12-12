@@ -31,7 +31,6 @@ void ExecutionControl::PreSetup()
 		" by static race detector","0");
 	knob_->RegisterStr("instrumented_lines","the instrumented lines traversed from"
 		" static_profile","0");
-
 	debug_analyzer_=new DebugAnalyzer;
 	debug_analyzer_->Register();
 
@@ -56,28 +55,31 @@ void ExecutionControl::PostSetup()
 		debugLog->RegisterLogFile(debug_file_);
 	}
 
-	//load static profile result to memory
+	//load static profile result
 	if(knob_->ValueStr("static_profile").compare("0")!=0) {
-		char buffer[200];
-		std::fstream in(knob_->ValueStr("static_profile").c_str(),
-			std::ios::in);
-		while(!in.eof()) {
-			in.getline(buffer,200,'\n');
-			static_profile_.insert(std::string(buffer));
-		}
-		in.close();
+		// char buffer[200];
+		// std::fstream in(knob_->ValueStr("static_profile").c_str(),
+		// 	std::ios::in);
+		// while(!in.eof()) {
+		// 	in.getline(buffer,200,'\n');
+		// 	static_profile_.insert(std::string(buffer));
+		// }
+		// in.close();
+		const char *filename=knob_->ValueStr("static_profile").c_str();
+		LOAD_LINES_TO_SET(filename,static_profile_);
 		//load the instrumented lines
 		if(knob_->ValueStr("instrumented_lines").compare("0")!=0) {
-			in.open(knob_->ValueStr("instrumented_lines").c_str(),
-				std::ios::in);
-			while(!in.eof()) {
-				in.getline(buffer,100,'\n');
-				instrumented_lines_.insert(std::string(buffer));
-			}
-			in.close();
+			// in.open(knob_->ValueStr("instrumented_lines").c_str(),
+			// 	std::ios::in);
+			// while(!in.eof()) {
+			// 	in.getline(buffer,100,'\n');
+			// 	instrumented_lines_.insert(std::string(buffer));
+			// }
+			// in.close();
+			const char *filename=knob_->ValueStr("instrumented_lines").c_str();
+			LOAD_LINES_TO_SET(filename,instrumented_lines_);
 		}		
 	}
-	
 	//Load static info.
 	sinfo_=new StaticInfo(CreateMutex());
 	sinfo_->Load(knob_->ValueStr("sinfo_in"));

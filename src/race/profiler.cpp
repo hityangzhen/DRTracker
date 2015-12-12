@@ -8,9 +8,9 @@ void Profiler::HandlePreSetup()
 	knob_->RegisterBool("ignore_lib","whether ignore accesses from common libraries","0");
 
 	//======================data race detection=====================
-	// knob_->RegisterStr("race_in","the input race database path","race.db");
-	// knob_->RegisterStr("race_out","the output race database path","race.db");
-	// knob_->RegisterStr("race_report","the output race report path","race.rp");
+	knob_->RegisterStr("race_in","the input race database path","race.db");
+	knob_->RegisterStr("race_out","the output race database path","race.db");
+	knob_->RegisterStr("race_report","the output race report path","race.rp");
 
 	// djit_analyzer_=new Djit;
 	// djit_analyzer_->Register();
@@ -42,8 +42,8 @@ void Profiler::HandlePreSetup()
 	// multilock_hb_analyzer_=new MultiLockHb();
 	// multilock_hb_analyzer_->Register();
 
-	// simple_lock_analyzer_=new SimpleLock();
-	// simple_lock_analyzer_->Register();
+	simple_lock_analyzer_=new SimpleLock();
+	simple_lock_analyzer_->Register();
 
 	// simplelock_plus_analyzer_=new SimpleLockPlus();
 	// simplelock_plus_analyzer_->Register();
@@ -57,8 +57,8 @@ void Profiler::HandlePreSetup()
 	// verifier_sl_analyzer_=new VerifierSl();
 	// verifier_sl_analyzer_->Register();
 
-	verifier_ml_analyzer_=new VerifierMl();
-	verifier_ml_analyzer_->Register();
+	// verifier_ml_analyzer_=new VerifierMl();
+	// verifier_ml_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -66,12 +66,12 @@ void Profiler::HandlePostSetup()
 {
 	ExecutionControl::HandlePostSetup();
 	//======================data race detection=====================
-	// //load race db
-	// race_db_=new RaceDB(CreateMutex());
-	// race_db_->Load(knob_->ValueStr("race_in"),sinfo_);
+	//load race db
+	race_db_=new RaceDB(CreateMutex());
+	race_db_->Load(knob_->ValueStr("race_in"),sinfo_);
 
-	// //create race report
-	// race_rp_=new RaceReport(CreateMutex());
+	//create race report
+	race_rp_=new RaceReport(CreateMutex());
 
 	// //add  data race detector
 	// if(djit_analyzer_->Enabled()) {
@@ -124,10 +124,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(multilock_hb_analyzer_);
 	// }
 
-	// if(simple_lock_analyzer_->Enabled()) {
-	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(simple_lock_analyzer_);
-	// }
+	if(simple_lock_analyzer_->Enabled()) {
+		simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(simple_lock_analyzer_);
+	}
 
 	// if(simplelock_plus_analyzer_->Enabled()) {
 	// 	simplelock_plus_analyzer_->Setup(CreateMutex(),race_db_);
@@ -148,11 +148,11 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_sl_analyzer_);
 	// }
 
-	if(verifier_ml_analyzer_->Enabled()) {
-		LoadPStmts();
-		verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
-		AddAnalyzer(verifier_ml_analyzer_);
-	}
+	// if(verifier_ml_analyzer_->Enabled()) {
+	// 	LoadPStmts();
+	// 	verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),prace_db_);
+	// 	AddAnalyzer(verifier_ml_analyzer_);
+	// }
 
 	//==============================end============================
 }
@@ -174,7 +174,7 @@ void Profiler::HandleProgramExit()
 {
 	ExecutionControl::HandleProgramExit();
 
-	//======================data race verifier=====================
+	//======================data race detection=====================
 	// //save statistics
 	// djit_analyzer_->SaveStatistics("statistics");
 	// //eraser_analyzer_->SaveStatistics("statistics");
@@ -188,18 +188,18 @@ void Profiler::HandleProgramExit()
 	// //simple_lock_analyzer_->SaveStatistics("statistics");
 	// //simplelock_plus_analyzer_->SaveStatistics("statistics");
 
-	// //save race db
-	// race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
+	//save race db
+	race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
 
-	// //save race report
-	// race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
-
-	// delete race_db_;
-	// delete race_rp_;
+	//save race report
+	race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
+	
+	delete race_db_;
+	delete race_rp_;
 	//==============================end============================
 
 	//======================data race verifier=====================
-	delete prace_db_;
+	// delete prace_db_;
 	//==============================end============================	
 }
 
@@ -225,5 +225,4 @@ void Profiler::LoadPStmts()
 		prace_db_->BuildRelationMapping(pstmt,fn,l);
 	}
 }
-
 }// namespace race

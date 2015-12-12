@@ -115,6 +115,15 @@
 		PIN_StartProgram();														\
 	}																				
 
+#define LOAD_LINES_TO_SET(filename,set) 										\
+	char buffer[200];															\
+	std::fstream in((filename),std::ios::in);									\
+	while(!in.eof()) {															\
+		in.getline(buffer,200,'\n');											\
+		(set).insert(std::string(buffer));										\
+	}																			\
+	in.close()																	
+
 //The main controller for the dynamic program analysis.
 class ExecutionControl {
 public:
