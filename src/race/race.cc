@@ -52,9 +52,8 @@ RaceDB::~RaceDB()
 		delete *iter;
 }
 
-Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,
-	RaceEventType p0,thread_t t1,Inst *i1,RaceEventType p1,
-	bool locking) 
+Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
+	thread_t t1,Inst *i1,RaceEventType p1,bool locking) 
 {
 	ScopedLock lock(internal_lock_,locking);
 	Race *race=new Race;
@@ -384,23 +383,23 @@ void RaceReport::Save(const std::string &report_name,RaceDB *race_db)
 {
 	ScopedLock lock(internal_lock_,true);
 	
-	// std::set<std::string> race_rp_set;
-	// std::stringstream ss;
-	// for(Race::Vec::iterator it=race_db->race_vec_.begin();
-	// 	it!=race_db->race_vec_.end();it++) {
-	// 	std::stringstream tmp;
-	// 	//get the race pair
-	// 	Inst *inst_1=(*it)->static_race_->event_vec_[0]->inst_;
-	// 	Inst *inst_2=(*it)->static_race_->event_vec_[1]->inst_;
-	// 	tmp<<inst_1->DebugInfoStr()<<" "<<inst_2->DebugInfoStr()<<std::endl;
-	// 	if(race_rp_set.find(tmp.str())==race_rp_set.end()) {
-	// 		race_rp_set.insert(tmp.str());
-	// 		ss<<tmp.str();
-	// 	}
-	// }
-	// //save to file
+	std::set<std::string> race_rp_set;
+	std::stringstream ss;
+	for(Race::Vec::iterator it=race_db->race_vec_.begin();
+		it!=race_db->race_vec_.end();it++) {
+		std::stringstream tmp;
+		//get the race pair
+		Inst *inst_1=(*it)->static_race_->event_vec_[0]->inst_;
+		Inst *inst_2=(*it)->static_race_->event_vec_[1]->inst_;
+		tmp<<inst_1->DebugInfoStr()<<" "<<inst_2->DebugInfoStr()<<std::endl;
+		if(race_rp_set.find(tmp.str())==race_rp_set.end()) {
+			race_rp_set.insert(tmp.str());
+			ss<<tmp.str();
+		}
+	}
+	//save to file
 	std::fstream out(report_name.c_str(),std::ios::out | std::ios::app);
-	//out<<ss.str()<<std::endl;
+	out<<ss.str()<<std::endl;
 	out<<"races: "<<race_db->race_vec_.size();
 	out.close();
 }

@@ -284,7 +284,7 @@ void SimpleLock::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 			if(reader_clp.first>thd_clk &&
 				(reader_clp.second==0 || curr_lc_table_[curr_thd_id]==0)) {
 
-				//PrintDebugRaceInfo("SIMPLELOCK",READTOWRITE,sl_meta,curr_thd_id,inst);
+				// PrintDebugRaceInfo("SIMPLELOCK",READTOWRITE,sl_meta,curr_thd_id,inst);
 
 				sl_meta->racy=true;
 				ReportRace(sl_meta,it->first,*inst_it,RACE_EVENT_READ,

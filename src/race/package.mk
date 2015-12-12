@@ -32,7 +32,7 @@ pintools += \
 race_profiler_objs := \
   race/detector.o \
   race/adhoc_sync.o \
-  race/simple_lock.o \
+  race/multilock_hb.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

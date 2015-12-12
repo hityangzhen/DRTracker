@@ -109,7 +109,6 @@ namespace race
 		int exec_id_;
 		address_t addr_;
 		RaceEvent::Vec event_vec_;
-		//can remove
 		StaticRace *static_race_;
 	private:
 		friend class RaceDB;

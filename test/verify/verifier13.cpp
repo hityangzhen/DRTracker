@@ -3,7 +3,7 @@
 #include <unistd.h>
 using namespace std;
 
-volatile int flag=0;
+int flag=0;
 
 void *thread1(void *tmp)
 {

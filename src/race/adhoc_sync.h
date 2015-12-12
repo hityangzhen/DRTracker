@@ -99,6 +99,10 @@ public:
 
 	void AddOrUpdateWriteMeta(thread_t curr_thd_id,Inst *rw_inst,
 		address_t start_addr,address_t end_addr);
+
+	void SameAddrReadMetas(thread_t curr_thd_id,address_t start_addr,
+		address_t end_addr,std::set<ReadMeta *> &result);
+
 	static uint16 rd_metas_len;
 private:
 

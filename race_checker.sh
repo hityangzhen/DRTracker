@@ -3,7 +3,7 @@
 # pro=bodytrack
 # ~/parsec-2.1/bin/parsecmgmt -a run -p $pro -c gcc-pthreads -i simmedium -n 4 -s "\
 /home/yiranyaoqiu/pin/pin -t /home/yiranyaoqiu/RaceChecker/build-debug/race_profiler.so \
--ignore_lib 1 -enable_simple_lock 1 -track_racy_inst 1 \
+-ignore_lib 1 -enable_multilock_hb 1 -track_racy_inst 1 \
 -static_profile static_profile/static_profile_13.out \
 -instrumented_lines static_profile/instrumented_lines_13.out \
 -loop_range_lines static_profile/loop_range_lines_13.out -race_verify_ml 1 \

@@ -178,30 +178,45 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
-	
+
 	//handle the read in loop
 	std::string file_name=inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	AdhocSync::WriteMeta *wr_meta=NULL;
+	std::set<AdhocSync::ReadMeta *> rd_metas;
 	if(loop_map_.find(file_name)!=loop_map_.end()) {
-		LoopTable::iterator iter=loop_map_[file_name]->lower_bound(line);
+		//find the suitable loop
+		LoopTable::reverse_iterator iter;
+		for(iter=loop_map_[file_name]->rbegin();iter!=loop_map_[file_name]->rend();
+			iter++)
+			if(iter->first<=line)
+				break;
 		if(iter->second.InLoop(line)) {
-			INFO_PRINT("=================loop read==============\n");
-			wr_meta=adhoc_sync_->
-				WriteReadSync(curr_thd_id,inst,start_addr,end_addr);
+INFO_PRINT("=================loop read==============\n");
+			wr_meta=adhoc_sync_->WriteReadSync(curr_thd_id,inst,start_addr,
+				end_addr);
+			if(wr_meta)
+				adhoc_sync_->SameAddrReadMetas(curr_thd_id,start_addr,end_addr,
+					rd_metas);
 		}
 	}
-
+	// if wr_meta exists, which indidates this read is the last read in loop
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
 		DEBUG_ASSERT(meta);
 		ProcessRead(curr_thd_id,meta,inst);
-		if(wr_meta) {
+		//remove false races
+		if(!rd_metas.empty()) {
 			INFO_PRINT("=================adhoc identify==============\n");
-			race_db_->RemoveRace(iaddr,wr_meta->lastest_thd_id,wr_meta->inst,
-				RACE_EVENT_WRITE,curr_thd_id,inst,RACE_EVENT_READ,false);
+			for(std::set<AdhocSync::ReadMeta *>::iterator iter=rd_metas.begin();
+				iter!=rd_metas.end();iter++) {
+				race_db_->RemoveRace(iaddr,wr_meta->lastest_thd_id,wr_meta->inst,
+					RACE_EVENT_WRITE,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,false);
+				race_db_->RemoveRace(iaddr,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,
+					wr_meta->lastest_thd_id,wr_meta->inst,RACE_EVENT_WRITE,false);
+			}
 		}
 	}
 }

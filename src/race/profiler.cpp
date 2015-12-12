@@ -39,11 +39,11 @@ void Profiler::HandlePreSetup()
 	// acculock_analyzer_=new AccuLock();
 	// acculock_analyzer_->Register();
 
-	// multilock_hb_analyzer_=new MultiLockHb();
-	// multilock_hb_analyzer_->Register();
+	multilock_hb_analyzer_=new MultiLockHb();
+	multilock_hb_analyzer_->Register();
 
-	simple_lock_analyzer_=new SimpleLock();
-	simple_lock_analyzer_->Register();
+	// simple_lock_analyzer_=new SimpleLock();
+	// simple_lock_analyzer_->Register();
 
 	// simplelock_plus_analyzer_=new SimpleLockPlus();
 	// simplelock_plus_analyzer_->Register();
@@ -119,15 +119,15 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(acculock_analyzer_);
 	// }
 
-	// if(multilock_hb_analyzer_->Enabled()) {
-	// 	multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(multilock_hb_analyzer_);
-	// }
-
-	if(simple_lock_analyzer_->Enabled()) {
-		simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(simple_lock_analyzer_);
+	if(multilock_hb_analyzer_->Enabled()) {
+		multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(multilock_hb_analyzer_);
 	}
+
+	// if(simple_lock_analyzer_->Enabled()) {
+	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(simple_lock_analyzer_);
+	// }
 
 	// if(simplelock_plus_analyzer_->Enabled()) {
 	// 	simplelock_plus_analyzer_->Setup(CreateMutex(),race_db_);

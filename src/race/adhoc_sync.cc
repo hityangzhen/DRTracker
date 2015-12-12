@@ -36,6 +36,19 @@ AdhocSync::ReadMeta* AdhocSync::FindReadMeta(thread_t curr_thd_id,Inst *rd_inst)
 	return NULL;
 }
 
+void AdhocSync::SameAddrReadMetas(thread_t curr_thd_id,address_t start_addr,
+	address_t end_addr,std::set<AdhocSync::ReadMeta *> &result)
+{
+	if(thd_rd_metas_map_.find(curr_thd_id)==thd_rd_metas_map_.end())
+		return ;
+	ReadMetas *rd_metas=thd_rd_metas_map_[curr_thd_id];
+	for(ReadMetas::iterator iter=rd_metas->begin();
+		iter!=rd_metas->end();iter++)
+		if((*iter)->start_addr==start_addr && 
+			(*iter)->end_addr==end_addr)
+			result.insert(*iter);
+}
+
 void AdhocSync::AddReadMeta(thread_t curr_thd_id,Inst *rd_inst,
 	address_t start_addr,address_t end_addr)
 {
@@ -50,8 +63,6 @@ void AdhocSync::AddReadMeta(thread_t curr_thd_id,Inst *rd_inst,
 	}
 	//set the initialize value
 	ReadMeta *rd_meta=new ReadMeta(rd_inst,start_addr,end_addr);
-INFO_FMT_PRINT("=================start_addr:[%lx],end_start:[%lx]===================\n",
-	start_addr,end_addr);
 	for(address_t iaddr=0;iaddr!=end_addr-start_addr;
 		iaddr+=sizeof(char)) {
 		rd_meta->values[iaddr]=*((char *)start_addr+iaddr);
@@ -81,20 +92,18 @@ void AdhocSync::AddOrUpdateWriteMeta(thread_t curr_thd_id,Inst *wr_inst,
 AdhocSync::WriteMeta* AdhocSync::WriteReadSync(thread_t curr_thd_id,Inst *rd_inst,
 	address_t start_addr,address_t end_addr)
 {
-INFO_FMT_PRINT("=================write read sync:[%lx],value:[%d]===================\n",
-	curr_thd_id,*(int *)start_addr);
 	if(SyncReadInst(rd_inst))
 		return NULL;
 	ReadMeta *rd_meta=NULL;
 	if((rd_meta=FindReadMeta(curr_thd_id,rd_inst))!=NULL) {
+INFO_FMT_PRINT("=================read metas size:[%ld]==============\n",
+		thd_rd_metas_map_[curr_thd_id]->size());
 		//if the target address changed
 		if(rd_meta->start_addr!=start_addr || rd_meta->end_addr!=end_addr)
 			rd_meta->Reset(rd_inst,start_addr,end_addr);
 		else {
-INFO_PRINT("=====================address equal====================\n");
 			//use the inefficient comparison
 			if(BytesEqual(rd_meta,start_addr,end_addr)) {
-INFO_PRINT("=====================bytes equal====================\n");
 				//haven't been in spin
 				if(!rd_meta->possible_spin) {
 					rd_meta->count++;
@@ -118,10 +127,8 @@ INFO_PRINT("=====================bytes equal====================\n");
 			}
 		}
 	//first shown
-	}else {
+	}else
 		AddReadMeta(curr_thd_id,rd_inst,start_addr,end_addr);
-INFO_PRINT("===================add read meta=====================\n");
-	}
 	return NULL;
 }
 
