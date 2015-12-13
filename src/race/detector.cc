@@ -197,9 +197,13 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 INFO_PRINT("=================loop read==============\n");
 			wr_meta=adhoc_sync_->WriteReadSync(curr_thd_id,inst,start_addr,
 				end_addr);
-			if(wr_meta)
+			if(wr_meta) {
+				adhoc_sync_->BuildWriteReadSync(wr_meta,
+					curr_vc_map_[wr_meta->GetLastestThread()],curr_vc_map_[curr_thd_id]);
+				//some races may have been detected in the write access
 				adhoc_sync_->SameAddrReadMetas(curr_thd_id,start_addr,end_addr,
 					rd_metas);
+			}
 		}
 	}
 	// if wr_meta exists, which indidates this read is the last read in loop
@@ -241,7 +245,8 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 	//keep the lastest write
-	adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,inst,start_addr,end_addr);
+	adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,curr_vc_map_[curr_thd_id],
+		inst,start_addr,end_addr);
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);

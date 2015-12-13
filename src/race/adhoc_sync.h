@@ -3,6 +3,7 @@
 
 #include "core/basictypes.h"
 #include "core/static_info.h"
+#include "core/vector_clock.h"
 #include <deque>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
@@ -55,10 +56,13 @@ public:
 
 	class WriteMeta:public Meta {
 	public:
-		WriteMeta(Inst *i,address_t sa,address_t ea,thread_t thd_id):
-			Meta(i,sa,ea),lastest_thd_id(thd_id) {}
+		WriteMeta(Inst *i,address_t sa,address_t ea,thread_t thd_id,
+			VectorClock vc):Meta(i,sa,ea),lastest_thd_id(thd_id),
+			lastest_thd_vc(vc) {}
 		~WriteMeta() {}
+		thread_t GetLastestThread() { return lastest_thd_id; }
 		thread_t lastest_thd_id;
+		VectorClock lastest_thd_vc;
 	};
 	typedef std::deque<ReadMeta *> ReadMetas;
 	typedef std::tr1::unordered_map<thread_t,ReadMetas *> ThreadReadMetasMap;
@@ -97,8 +101,11 @@ public:
 	WriteMeta* WriteReadSync(thread_t curr_thd_id,Inst *rd_inst,
 		address_t start_addr,address_t end_addr);
 
-	void AddOrUpdateWriteMeta(thread_t curr_thd_id,Inst *rw_inst,
-		address_t start_addr,address_t end_addr);
+	void AddOrUpdateWriteMeta(thread_t curr_thd_id,VectorClock *vc,
+		Inst *rw_inst,address_t start_addr,address_t end_addr);
+
+	void BuildWriteReadSync(WriteMeta *wr_meta,VectorClock *wr_vc,
+	VectorClock *curr_vc);
 
 	void SameAddrReadMetas(thread_t curr_thd_id,address_t start_addr,
 		address_t end_addr,std::set<ReadMeta *> &result);

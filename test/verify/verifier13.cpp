@@ -17,6 +17,7 @@ void *thread2(void *tmp)
 	while(flag!=1) {
 		cout<<flag<<endl;	
 	}
+	flag=3;
 	return NULL;
 }
 

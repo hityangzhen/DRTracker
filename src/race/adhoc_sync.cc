@@ -70,12 +70,12 @@ void AdhocSync::AddReadMeta(thread_t curr_thd_id,Inst *rd_inst,
 	rd_metas->push_back(rd_meta);
 }
 
-void AdhocSync::AddOrUpdateWriteMeta(thread_t curr_thd_id,Inst *wr_inst,
-	address_t start_addr,address_t end_addr)
+void AdhocSync::AddOrUpdateWriteMeta(thread_t curr_thd_id,VectorClock *vc,
+	Inst *wr_inst,address_t start_addr,address_t end_addr)
 {
 	if(wr_meta_table_.find(start_addr)==wr_meta_table_.end())
 		wr_meta_table_[start_addr]=new WriteMeta(wr_inst,start_addr,
-			end_addr,curr_thd_id);
+			end_addr,curr_thd_id,*vc);
 	else {
 		DEBUG_ASSERT(wr_meta_table_[start_addr]);
 		WriteMeta *wr_meta=wr_meta_table_[start_addr];
@@ -83,6 +83,7 @@ void AdhocSync::AddOrUpdateWriteMeta(thread_t curr_thd_id,Inst *wr_inst,
 		wr_meta->end_addr=end_addr;
 		wr_meta->inst=wr_inst;
 		wr_meta->lastest_thd_id=curr_thd_id;
+		wr_meta->lastest_thd_vc=*vc;
 	}
 }
 
@@ -130,6 +131,13 @@ INFO_FMT_PRINT("=================read metas size:[%ld]==============\n",
 	}else
 		AddReadMeta(curr_thd_id,rd_inst,start_addr,end_addr);
 	return NULL;
+}
+
+void AdhocSync::BuildWriteReadSync(WriteMeta *wr_meta,VectorClock *wr_vc,
+	VectorClock *curr_vc)
+{
+	wr_vc->Increment(wr_meta->lastest_thd_id);
+	curr_vc->Join(&wr_meta->lastest_thd_vc);
 }
 
 } //namespace race
