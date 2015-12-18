@@ -114,6 +114,27 @@ void RaceDB::RemoveRace(thread_t t0,Inst *i0,RaceEventType p0,
 	}
 }
 
+void RaceDB::FindRacesByOneSide(thread_t t0,Inst *i0,RaceEventType p0,
+	std::map<Race*,RaceEvent*> &result,bool locking)
+{
+	ScopedLock lock(internal_lock_,locking);
+	StaticRaceEvent *static_event_0=FindStaticRaceEvent(i0,p0,locking);
+	if(!static_event_0)
+		return ;
+	//a static race is constructed as two static race event
+	for(Race::Vec::iterator iter=race_vec_.begin();iter!=race_vec_.end();
+		iter++) {
+		RaceEvent::Vec &event_vec=(*iter)->event_vec_;
+		//race is constructed as two race events
+		if((event_vec[0]->static_event_==static_event_0 && 
+			event_vec[0]->thd_id_==t0))
+			result[*iter]=event_vec[1];
+		else if((event_vec[1]->static_event_==static_event_0 && 
+			event_vec[1]->thd_id_==t0))	
+			result[*iter]=event_vec[0];		
+	}
+}
+
 void RaceDB::SetRacyInst(Inst *inst,bool locking)
 {
 	ScopedLock lock(internal_lock_,locking);

@@ -100,7 +100,7 @@ namespace race
 		};
 		int exec_id() { return exec_id_; }
 		address_t addr() { return addr_; }
-		void SetStatus(STATUS s) { status_=s; } 
+		void set_status(STATUS s) { status_=s; } 
 	protected:
 		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL),status_(HARMFUL)
 		{}
@@ -131,8 +131,10 @@ namespace race
 
 		Race *CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
 			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
-		void RemoveRace(thread_t t0,Inst *i0,RaceEventType p0,
-			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
+		void RemoveRace(thread_t t0,Inst *i0,RaceEventType p0,thread_t t1,
+			Inst *i1,RaceEventType p1,bool locking);
+		void FindRacesByOneSide(thread_t t0,Inst *i0,RaceEventType p0,
+			std::map<Race*,RaceEvent*> &result,bool locking);
 		void SetRacyInst(Inst *inst,bool locking);
 		bool RacyInst(Inst *inst,bool locking);
 

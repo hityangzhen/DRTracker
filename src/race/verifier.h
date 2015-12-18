@@ -473,6 +473,7 @@ protected:
 	//spin thread and lastest exiting condition read mapping 
 	ThreadInstMap spinthd_inst_map_;
 	thread_t spin_rlt_wrthd_;
+	Inst *spin_rlt_wrinst_;
 	uint32 spin_inner_count_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);

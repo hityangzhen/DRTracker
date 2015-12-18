@@ -111,9 +111,10 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	//load spin reads in each loop
 	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0)
 		LoadSpinReads();
-	//
+	//ad-hoc
 	spin_inner_count_=0;
 	spin_rlt_wrthd_=0;
+	spin_rlt_wrinst_=NULL;
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -1138,6 +1139,10 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
 						else {
+							//set the relevant write inst
+							if(spinthd_inst_map_.find(iter->first)!=
+								spinthd_inst_map_.end())
+								spin_rlt_wrinst_=inst;
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
 						}
@@ -1152,6 +1157,11 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 							spinthd_inst_map_[curr_thd_id]=inst;							
 
 						if(meta_ss->type==RACE_EVENT_WRITE) {
+							//set the relevant write inst
+							if(spinthd_inst_map_.find(curr_thd_id)!=
+								spinthd_inst_map_.end())
+								spin_rlt_wrinst_=meta_ss->inst;
+
 							flag=true;
 							pp_thds.insert(iter->first);
 							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
@@ -1312,7 +1322,7 @@ void Verifier::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst)
 {
 	if(spinthd_inst_map_.find(curr_thd_id)==spinthd_inst_map_.end())
 		return ;
-	INFO_FMT_PRINT("==================process write read sync:[%lx]================\n",curr_thd_id);
+INFO_FMT_PRINT("==================process write read sync:[%lx]================\n",curr_thd_id);
 	Inst *latest_rdinst=spinthd_inst_map_[curr_thd_id];
 	std::string file_name=latest_rdinst->GetFileName();
 	size_t found=file_name.find_last_of("/");
@@ -1328,11 +1338,24 @@ void Verifier::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst)
 		VectorClock *wrthd_vc=thd_vc_map_[spin_rlt_wrthd_];
 		thd_vc_map_[curr_thd_id]->Join(wrthd_vc);
 		wrthd_vc->Increment(spin_rlt_wrthd_);
-		spin_rlt_wrthd_=0;
-		INFO_FMT_PRINT("++++++++++++++++write->read sync,curr inst:"
-			"[%s]++++++++++++++++\n",curr_inst->ToString().c_str());
+INFO_FMT_PRINT("++++++++++++++++write->read sync,curr inst:[%s]++++++++++++++++\n",curr_inst->ToString().c_str());
 		//set all exiting condition relative race to be BENIGN
-
+		std::map<Race*,RaceEvent*> result;
+		race_db_->FindRacesByOneSide(spin_rlt_wrthd_,spin_rlt_wrinst_,
+			RACE_EVENT_WRITE,result,false);
+		for(std::map<Race*,RaceEvent*>::iterator iter=result.begin();
+			iter!=result.end();iter++) {
+			RaceEvent *race_event=iter->second;
+			//find the corresponding spin read event
+			if(race_event->type()==RACE_EVENT_READ && 
+				loop->InLoop(race_event->inst()->GetLine())) {
+INFO_FMT_PRINT("++++++++++++++++benign race, read inst:[%s]++++++++++++++++\n",race_event->inst()->ToString().c_str());
+				iter->first->set_status(Race::BENIGN);
+			}
+		}
+		//clear relevant write info
+		spin_rlt_wrthd_=0;
+		spin_rlt_wrinst_=NULL;
 	} else {
 		//after waiting 4 insts to ensure is still in loop
 		++spin_inner_count_;
