@@ -29,6 +29,8 @@ void VerifierMl::Register()
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
 		"4");
 	knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
+	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
+		"0");
 }
 
 Verifier::Meta* VerifierMl::GetMeta(address_t addr)

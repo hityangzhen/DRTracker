@@ -94,12 +94,16 @@ namespace race
 	class Race {
 	public:
 		typedef std::vector<Race *> Vec;
-
+		enum STATUS {
+			HARMFUL,
+			BENIGN
+		};
 		int exec_id() { return exec_id_; }
 		address_t addr() { return addr_; }
-
+		void SetStatus(STATUS s) { status_=s; } 
 	protected:
-		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL) {}
+		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL),status_(HARMFUL)
+		{}
 		~Race() {
 			for(RaceEvent::Vec::iterator iter=event_vec_.begin();
 				iter!=event_vec_.end();iter++)
@@ -110,6 +114,7 @@ namespace race
 		address_t addr_;
 		RaceEvent::Vec event_vec_;
 		StaticRace *static_race_;
+		STATUS status_;
 	private:
 		friend class RaceDB;
 		friend class RaceReport;
@@ -126,7 +131,7 @@ namespace race
 
 		Race *CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
 			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
-		void RemoveRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
+		void RemoveRace(thread_t t0,Inst *i0,RaceEventType p0,
 			thread_t t1,Inst *i1,RaceEventType p1,bool locking);
 		void SetRacyInst(Inst *inst,bool locking);
 		bool RacyInst(Inst *inst,bool locking);

@@ -113,8 +113,7 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 }
 
 void Detector::ImageLoad(Image *image, address_t low_addr, address_t high_addr,
-                         address_t data_start, size_t data_size,
-                         address_t bss_start, size_t bss_size) 
+	address_t data_start, size_t data_size,address_t bss_start, size_t bss_size) 
 {
 	DEBUG_ASSERT(low_addr && high_addr && high_addr > low_addr);
 	if(data_start) {
@@ -128,8 +127,7 @@ void Detector::ImageLoad(Image *image, address_t low_addr, address_t high_addr,
 }
 
 void Detector::ImageUnload(Image *image,address_t low_addr, address_t high_addr,
-                           address_t data_start, size_t data_size,
-                           address_t bss_start, size_t bss_size)
+	address_t data_start, size_t data_size,address_t bss_start, size_t bss_size)
 {
 	DEBUG_ASSERT(low_addr);
 	if(data_start)
@@ -159,7 +157,7 @@ void Detector::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 
 
 void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                             Inst *inst, address_t addr, size_t size)
+	Inst *inst, address_t addr, size_t size)
 {
 	ReadInstCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -216,9 +214,9 @@ INFO_PRINT("=================loop read==============\n");
 			INFO_PRINT("=================adhoc identify==============\n");
 			for(std::set<AdhocSync::ReadMeta *>::iterator iter=rd_metas.begin();
 				iter!=rd_metas.end();iter++) {
-				race_db_->RemoveRace(iaddr,wr_meta->lastest_thd_id,wr_meta->inst,
+				race_db_->RemoveRace(wr_meta->lastest_thd_id,wr_meta->inst,
 					RACE_EVENT_WRITE,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,false);
-				race_db_->RemoveRace(iaddr,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,
+				race_db_->RemoveRace(curr_thd_id,(*iter)->inst,RACE_EVENT_READ,
 					wr_meta->lastest_thd_id,wr_meta->inst,RACE_EVENT_WRITE,false);
 			}
 		}
@@ -226,7 +224,7 @@ INFO_PRINT("=================loop read==============\n");
 }
 
 void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                              Inst *inst, address_t addr, size_t size)
+	Inst *inst, address_t addr, size_t size)
 {
 	WriteInstCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -256,7 +254,7 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 }
 //atomic inst doesn't need to be considered
 void Detector::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,std::string type, address_t addr)
+	Inst *inst,std::string type, address_t addr)
 {
 	VolatileCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -265,14 +263,14 @@ void Detector::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 //after going through the atomic inst ,we also recover mark for 
 //next instruction
 void Detector::AfterAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,std::string type, address_t addr)
+	Inst *inst,std::string type, address_t addr)
 {
 	ScopedLock lock(internal_lock_);
 	atomic_map_[curr_thd_id]=false;
 }
 
 void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,thread_t child_thd_id)
+	Inst *inst,thread_t child_thd_id)
 {
 	ScopedLock lock(internal_lock_);
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
@@ -282,7 +280,7 @@ void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 }
 
 void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
-								Inst *inst,thread_t childThdId) 
+	Inst *inst,thread_t childThdId) 
 {
 	ScopedLock lock(internal_lock_);
 	curr_vc_map_[currThdId]->Increment(currThdId);
@@ -290,7 +288,7 @@ void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
 
 //After acquire the the lock
 void Detector::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,address_t addr) 
+	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -301,7 +299,7 @@ void Detector::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_thd_c
 }
 
 void Detector::AfterPthreadMutexTryLock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-								Inst *inst,address_t addr,int ret_val) 
+	Inst *inst,address_t addr,int ret_val) 
 {
 	LockCountIncrease();
 	if(ret_val!=0)
@@ -311,7 +309,7 @@ void Detector::AfterPthreadMutexTryLock(thread_t curr_thd_id,timestamp_t curr_th
 
 //Before release the lock
 void Detector::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,address_t addr) 
+	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
   	ScopedLock locker(internal_lock_);
@@ -324,7 +322,7 @@ void Detector::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr_th
 
 
 void Detector::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,address_t addr) 
+	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -335,7 +333,7 @@ void Detector::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr_th
 	ProcessLock(curr_thd_id,meta);
 }
 void Detector::AfterPthreadRwlockWrlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,address_t addr) 
+	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -347,7 +345,7 @@ void Detector::AfterPthreadRwlockWrlock(thread_t curr_thd_id,timestamp_t curr_th
 }
 
 void Detector::AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-								Inst *inst,address_t addr,int ret_val)
+	Inst *inst,address_t addr,int ret_val)
 {
 	LockCountIncrease();
 	if(ret_val!=0)
@@ -356,7 +354,7 @@ void Detector::AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t curr
 }
 
 void Detector::AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-								Inst *inst,address_t addr,int ret_val) 
+	Inst *inst,address_t addr,int ret_val) 
 {
 	LockCountIncrease();
 	if(ret_val!=0)
@@ -366,7 +364,7 @@ void Detector::AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,timestamp_t curr
 
 
 void Detector::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
-								Inst *inst,address_t addr) 
+	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
   	ScopedLock lock(internal_lock_);
@@ -416,8 +414,9 @@ void Detector::BeforePthreadCondWait(thread_t curr_thd_id,timestamp_t curr_thd_c
   	ProcessPreWait(curr_thd_id,cond_meta);
 }
 
-void Detector::AfterPthreadCondWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-	Inst *inst,address_t cond_addr, address_t mutex_addr)
+void Detector::AfterPthreadCondWait(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t cond_addr, 
+	address_t mutex_addr)
 {
 	CondVarCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -473,8 +472,8 @@ void Detector::AfterPthreadBarrierWait(thread_t curr_thd_id,
 }
 
 
-void Detector::BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-      Inst *inst,address_t addr)
+void Detector::BeforeSemPost(thread_t curr_thd_id,
+	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
@@ -484,7 +483,7 @@ void Detector::BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 }
 
 void Detector::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-      Inst *inst,address_t addr)
+	Inst *inst,address_t addr)
 {
 	SemaphoreCountIncrease();
 	ScopedLock lock(internal_lock_);
@@ -495,35 +494,33 @@ void Detector::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 }
 
 void Detector::AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                           Inst *inst, size_t size, address_t addr)
+	Inst *inst, size_t size, address_t addr)
 {
 	AllocAddrRegion(addr,size);
 }
 
 void Detector::AfterCalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                           Inst *inst, size_t nmemb, size_t size,address_t addr)
+	Inst *inst, size_t nmemb, size_t size,address_t addr)
 {
 	AllocAddrRegion(addr,size * nmemb);
 }
 
 void Detector::BeforeRealloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                             Inst *inst, address_t ori_addr, size_t size) 
+	Inst *inst, address_t ori_addr, size_t size) 
 {
   	FreeAddrRegion(ori_addr);
 }
 void Detector::AfterRealloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                            Inst *inst, address_t ori_addr, size_t size,
-                            address_t new_addr) 
+	Inst *inst, address_t ori_addr, size_t size,address_t new_addr) 
 {
   	AllocAddrRegion(new_addr, size);
 }
 
 void Detector::BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
-                          Inst *inst, address_t addr) 
+	Inst *inst, address_t addr) 
 {
   	FreeAddrRegion(addr);
 }
-
 
 //help functions
 void Detector::AllocAddrRegion(address_t addr,size_t size)
@@ -664,8 +661,7 @@ Detector::SemMeta *Detector::GetSemMeta(address_t iaddr)
 }
 
 void Detector::ReportRace(Meta *meta, thread_t t0, Inst *i0,
-                          RaceEventType p0, thread_t t1, Inst *i1,
-                          RaceEventType p1)
+	RaceEventType p0, thread_t t1, Inst *i1,RaceEventType p1)
 {
 	race_db_->CreateRace(meta->addr,t0,i0,p0,t1,i1,p1,false);
 }

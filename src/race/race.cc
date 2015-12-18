@@ -78,7 +78,7 @@ Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
 	return race;
 }
 
-void RaceDB::RemoveRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
+void RaceDB::RemoveRace(thread_t t0,Inst *i0,RaceEventType p0,
 	thread_t t1,Inst *i1,RaceEventType p1,bool locking)
 {
 	ScopedLock lock(internal_lock_,locking);

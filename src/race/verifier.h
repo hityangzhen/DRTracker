@@ -11,6 +11,7 @@
 #include "race/race.h"
 #include "core/pin_sync.hpp"
 #include "core/vector_clock.h"
+#include "core/loop.h"
 
 namespace race 
 {
@@ -44,7 +45,14 @@ protected:
 	public:
 		typedef std::tr1::unordered_map<address_t,Meta *> Table;
 		typedef std::tr1::unordered_set<uint64> RacedInstPairSet;
-		explicit Meta(address_t a):addr(a),index(0) {}
+		explicit Meta(address_t a):addr(a) {
+			if(Verifier::unit_size_!=0) {
+				lastest_values=new char[Verifier::unit_size_];
+				for(address_t iaddr=0;iaddr!=Verifier::unit_size_;iaddr++) {
+					lastest_values[iaddr]=*((char *)addr+iaddr);
+				}
+			}
+		}
 		virtual ~Meta() {
 			for(MetaSnapshotsMap::iterator iter=meta_ss_map.begin();
 				iter!=meta_ss_map.end();iter++) {
@@ -55,6 +63,8 @@ protected:
 					delete *iiter;
 				delete iter->second;
 			}
+			//clear the value
+			delete []lastest_values;
 		}
 		void AddRacedInstPair(Inst *i1,Inst *i2) {
 			uint64 x=reinterpret_cast<uint64>(i1);
@@ -99,10 +109,17 @@ protected:
 			}
 			return false;
 		}
+		void ResetLastestValues() {
+			for(address_t iaddr=0;iaddr!=Verifier::unit_size_;iaddr++) {
+				lastest_values[iaddr]=*((char *)addr+iaddr);
+			}
+		}
+		char *Lastestvalues() { return lastest_values; }
+		//record the lastest values
+		char *lastest_values;
 		address_t addr;
 		RacedInstPairSet raced_inst_pair_set;
 		MetaSnapshotsMap meta_ss_map;
-		int index;
 	};
 
 	//data for mutex 
@@ -182,12 +199,18 @@ public:
 	typedef std::map<PStmt *,MetaSet *> PStmtMetasMap;
 	typedef std::set<PStmt *> PStmtSet;
 	typedef std::tr1::unordered_map<thread_t,VectorClock *> ThreadVectorClockMap;
+	typedef std::tr1::unordered_map<int,Loop *> LoopTable;
+	typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
+	typedef std::tr1::unordered_set<std::string> ExitingCondLineSet;
+	typedef std::set<thread_t> SpinThreadSet;
+	typedef std::map<thread_t,Inst *> ThreadInstMap;
 
 	Verifier();
 	virtual ~Verifier();
 
 	virtual void Register();
-	virtual void Setup(Mutex *internal_lock,Mutex *verify_lock,PRaceDB *prace_db);
+	virtual void Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
+		PRaceDB *prace_db);
 	virtual bool Enabled();
 
 	//image load-unload
@@ -356,6 +379,10 @@ protected:
 
 	void PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,Inst *i1,
 		thread_t t2,Inst *i2);
+	void ReportRace(Meta *meta, thread_t t0, Inst *i0,RaceEventType p0, 
+		thread_t t1, Inst *i1,RaceEventType p1) {
+		race_db_->CreateRace(meta->addr,t0,i0,p0,t1,i1,p1,false);
+	}
 	
 	void ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_id);
 	void ChooseRandomThreadAfterAllUnavailable();
@@ -391,7 +418,7 @@ protected:
 
 	void ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas);
 
-	//need to be protected
+	//need to be protected by sync
 	void BlockThread(thread_t curr_thd_id) {
 		blk_thd_set_.insert(curr_thd_id);
 		avail_thd_set_.erase(curr_thd_id);
@@ -400,13 +427,20 @@ protected:
 		blk_thd_set_.erase(curr_thd_id);
 		avail_thd_set_.insert(curr_thd_id);
 	}
+	//ad-hoc
+	void LoadSpinReads();
+	bool SpinRead(Inst *inst,RaceEventType type);
+	void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
+	void WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,
+		Inst *curr_inst);
 
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
+	RaceDB *race_db_;
 	PRaceDB *prace_db_;
 	RegionFilter *filter_;
-	
-	address_t unit_size_;
+
+	static address_t unit_size_;
 	//random thread id
 	thread_t rdm_thd_id_;
 
@@ -431,6 +465,15 @@ protected:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
+
+	//all eixting conds of loops
+	LoopMap loop_map_;
+	ExitingCondLineSet exiting_cond_line_set_;
+	SpinThreadSet spin_thd_set_;
+	//spin thread and lastest exiting condition read mapping 
+	ThreadInstMap spinthd_inst_map_;
+	thread_t spin_rlt_wrthd_;
+	uint32 spin_inner_count_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };

@@ -30,9 +30,8 @@ pintools += \
 	race_profiler.so
 
 race_profiler_objs := \
-  race/detector.o \
-  race/adhoc_sync.o \
-  race/multilock_hb.o \
+  race/verifier.o \
+  race/verifier_ml.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \
