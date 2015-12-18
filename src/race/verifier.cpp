@@ -171,19 +171,8 @@ void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 INFO_FMT_PRINT("===========thread:[%lx] exit,postpone set size:[%ld]=============\n",
 curr_thd_id,pp_thd_set_.size());
 	ScopedLock lock(internal_lock_);
+	ProcessWriteReadSync(curr_thd_id,NULL);
 
-	//current thread may execute fewer insts to exit the loop
-	if(spinthd_inst_map_.find(curr_thd_id)!=spinthd_inst_map_.end()) {
-		spinthd_inst_map_.erase(curr_thd_id);
-		if(spin_rlt_wrthd_!=0) {
-			//construct write read sync
-			VectorClock *wrthd_vc=thd_vc_map_[spin_rlt_wrthd_];
-			DEBUG_ASSERT(wrthd_vc);
-			//thd_vc_map_[curr_thd_id]->Join(wrthd_vc);
-			wrthd_vc->Increment(spin_rlt_wrthd_);
-			INFO_PRINT("++++++++++++++++write->read sync++++++++++++++++\n");
-		}
-	}
 	//clear current thread accessed metas
 	// if(thd_metas_map_.find(curr_thd_id)!=thd_metas_map_.end() && 
 	// 	thd_metas_map_[curr_thd_id]!=NULL)
@@ -1331,13 +1320,15 @@ INFO_FMT_PRINT("==================process write read sync:[%lx]================\
 	Loop *loop=(*loop_map_[file_name])[latest_rdinst->GetLine()];
 	DEBUG_ASSERT(loop);
 	//if current inst still in loop region
-	if(spin_rlt_wrthd_!=0 && !loop->InLoop(curr_inst->GetLine())) {
+	if(spin_rlt_wrthd_!=0 && (!curr_inst ||
+		!loop->InLoop(curr_inst->GetLine()))) {
 		spinthd_inst_map_.erase(curr_thd_id);
 		spin_inner_count_=0;
 		//construct write read sync
 		VectorClock *wrthd_vc=thd_vc_map_[spin_rlt_wrthd_];
 		thd_vc_map_[curr_thd_id]->Join(wrthd_vc);
 		wrthd_vc->Increment(spin_rlt_wrthd_);
+		if(curr_inst)
 INFO_FMT_PRINT("++++++++++++++++write->read sync,curr inst:[%s]++++++++++++++++\n",curr_inst->ToString().c_str());
 		//set all exiting condition relative race to be BENIGN
 		std::map<Race*,RaceEvent*> result;
