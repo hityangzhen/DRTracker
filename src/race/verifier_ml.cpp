@@ -101,14 +101,15 @@ inline void VerifierMl::ProcessPreRwlockUnlock(thread_t curr_thd_id,
 }
 
 void VerifierMl::AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
-	timestamp_t curr_thd_clk,RaceEventType type,Inst *inst)
+	timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s)
 {
 	//calculate the lockset
 	if(thd_rdls_map_.find(curr_thd_id)==thd_rdls_map_.end())
 		thd_rdls_map_[curr_thd_id]=new LockSet;
 	if(thd_ls_map_.find(curr_thd_id)==thd_ls_map_.end())
 		thd_ls_map_[curr_thd_id]=new LockSet;
-	MlMetaSnapshot *mlmeta_ss=new MlMetaSnapshot(curr_thd_clk,type,inst);
+	MlMetaSnapshot *mlmeta_ss=new MlMetaSnapshot(curr_thd_clk,type,
+		inst,s);
 	mlmeta_ss->rd_ls=*thd_rdls_map_[curr_thd_id];
 	mlmeta_ss->wr_ls=*thd_ls_map_[curr_thd_id];
 	meta->AddMetaSnapshot(curr_thd_id,mlmeta_ss);
@@ -127,6 +128,9 @@ RaceType VerifierMl::HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
 
 	LockSet *curr_rdls=thd_rdls_map_[curr_thd_id];
 	LockSet *curr_ls=thd_ls_map_[curr_thd_id];
+
+INFO_FMT_PRINT("===========meta_ss clk:[%ld],thd_clk:[%ld]=============\n",
+	mlmeta_ss->thd_clk,thd_clk);
 
 	if(curr_type==RACE_EVENT_WRITE && mlmeta_ss->thd_clk>thd_clk) {
 		if(mlmeta_ss->type==RACE_EVENT_WRITE && 

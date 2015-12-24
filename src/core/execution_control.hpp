@@ -120,7 +120,8 @@
 	std::fstream in((filename),std::ios::in);									\
 	while(!in.eof()) {															\
 		in.getline(buffer,200,'\n');											\
-		(set).insert(std::string(buffer));										\
+		if(isalpha(buffer[0]))													\
+			(set).insert(std::string(buffer));									\
 	}																			\
 	in.close()																	
 

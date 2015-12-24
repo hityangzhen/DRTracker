@@ -73,6 +73,8 @@ Race *RaceDB::CreateRace(address_t addr,thread_t t0,Inst *i0,RaceEventType p0,
 	//get static race
 	race->static_race_=GetStaticRace(e0->static_event_,
 		e1->static_event_,false);
+	//set the race status
+	race->set_status(Race::HARMFUL);
 	//put self into race vector
 	race_vec_.push_back(race);
 	return race;
@@ -408,6 +410,8 @@ void RaceReport::Save(const std::string &report_name,RaceDB *race_db)
 	std::stringstream ss;
 	for(Race::Vec::iterator it=race_db->race_vec_.begin();
 		it!=race_db->race_vec_.end();it++) {
+		if((*it)->status_!=Race::HARMFUL)
+			continue;
 		std::stringstream tmp;
 		//get the race pair
 		Inst *inst_1=(*it)->static_race_->event_vec_[0]->inst_;

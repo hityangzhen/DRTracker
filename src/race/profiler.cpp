@@ -189,17 +189,18 @@ void Profiler::HandleProgramExit()
 	// //simple_lock_analyzer_->SaveStatistics("statistics");
 	// //simplelock_plus_analyzer_->SaveStatistics("statistics");
 
-	// //save race db
-	// race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
+	//save race db
+	race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
 
 	//save race report
 	race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
-	
+
 	delete race_db_;
 	delete race_rp_;
 	//==============================end============================
 
 	//======================data race verifier=====================
+	delete verifier_ml_analyzer_;
 	delete prace_db_;
 	//==============================end============================	
 }

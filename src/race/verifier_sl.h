@@ -17,8 +17,8 @@ public:
 private:
 	class SlMetaSnapshot:public MetaSnapshot {
 	public:
-		SlMetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i):
-			MetaSnapshot(clk,t,i) {}
+		SlMetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i,PStmt *s):
+			MetaSnapshot(clk,t,i,s) {}
 		~SlMetaSnapshot() {}
 		uint8 lock_count;
 		uint8 rdlock_count;
@@ -46,7 +46,7 @@ private:
 	RaceType HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
 		thread_t curr_thd_id,RaceEventType curr_type);
 	void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
-		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst);
+		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s);
 private:
 	DISALLOW_COPY_CONSTRUCTORS(VerifierSl);
 };

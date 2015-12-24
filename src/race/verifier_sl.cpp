@@ -101,14 +101,15 @@ inline void VerifierSl::ProcessPreRwlockUnlock(thread_t curr_thd_id,
 }
 
 void VerifierSl::AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
-	timestamp_t curr_thd_clk,RaceEventType type,Inst *inst) 
+	timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s) 
 {
 	//calculate the lockcount
 	if(thd_lkcnt_map_.find(curr_thd_id)==thd_lkcnt_map_.end())
 		thd_lkcnt_map_[curr_thd_id]=0;
 	if(thd_rdlkcnt_map_.find(curr_thd_id)==thd_rdlkcnt_map_.end())
 		thd_rdlkcnt_map_[curr_thd_id]=0;
-	SlMetaSnapshot *slmeta_ss=new SlMetaSnapshot(curr_thd_clk,type,inst);
+	SlMetaSnapshot *slmeta_ss=new SlMetaSnapshot(curr_thd_clk,type,
+		inst,s);
 	slmeta_ss->lock_count=thd_lkcnt_map_[curr_thd_id];
 	slmeta_ss->rdlock_count=thd_rdlkcnt_map_[curr_thd_id];
 	meta->AddMetaSnapshot(curr_thd_id,slmeta_ss);

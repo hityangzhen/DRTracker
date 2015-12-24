@@ -19,8 +19,8 @@ public:
 private:
 	class MlMetaSnapshot:public MetaSnapshot {
 	public:
-		MlMetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i):
-			MetaSnapshot(clk,t,i) {}
+		MlMetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i,PStmt *s):
+			MetaSnapshot(clk,t,i,s) {}
 		~MlMetaSnapshot() {}
 		LockSet wr_ls;
 		LockSet rd_ls;
@@ -47,7 +47,7 @@ private:
 	void ProcessPreRwlockUnlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
 
 	void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
-		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst);
+		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s);
 	RaceType HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
 		thread_t curr_thd_id,RaceEventType curr_type);
 private:

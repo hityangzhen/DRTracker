@@ -41,8 +41,12 @@ from tool import file_and_line_sort
 
 file_and_line=[]
 
-def handleWarnings(infile_name):
-	"""
+def handleWarningLines(infile_name):
+	"""all the warning lines are accumulated into file_and_line
+	list, each entry is a string of 
+		`file,SPACE and line`
+	this method is mainly used for accumulating potential racing
+	statements of the evaluated program
 	"""
 	dom=xml.dom.minidom.parse(infile_name)
 	root=dom.documentElement
@@ -61,6 +65,37 @@ def handleWarnings(infile_name):
 			if node.nodeType==node.ELEMENT_NODE and node.nodeName=='pp':
 				file_and_line.append(node.getAttribute('file')+' '+
 					node.getAttribute('line')+'\n')
+
+def handleWarningPairs(infile_name):
+	"""all the warning pairs are accumulated into file_and_line
+	list, each entry is a string of 
+		`file,SPACE,line,SPACE,file,SPACE,line`
+	this method is mainly used for accumulating potential racing 
+	statement pairs of the evaluated program
+	"""
+	dom=xml.dom.minidom.parse(infile_name)
+	root=dom.documentElement
+	race_nodes=root.getElementsByTagName('race')
+	for race_node in race_nodes:
+		race_acc1=race_node.getElementsByTagName('acc1')[0]
+		# find the first potential racing stmts of pairs
+		first_stmts=[]
+		for node in race_acc1.childNodes:
+			if node.nodeType==node.ELEMENT_NODE and node.nodeName=='pp':
+				first_stmts.append(node.getAttribute('file')+' '+
+					node.getAttribute('line'))
+
+		race_acc2=race_node.getElementsByTagName('acc2')[0]
+		# find the second potential racing stmts of pairs
+		second_stmts=[]
+		for node in race_acc2.childNodes:
+			if node.nodeType==node.ELEMENT_NODE and node.nodeName=='pp':
+				second_stmts.append(node.getAttribute('file')+' '+
+					node.getAttribute('line'))
+		# merge into the pair
+		for first_stmt in first_stmts:
+			for second_stmt in second_stmts:
+				file_and_line.append(first_stmt+' '+second_stmt+'\n')
 
 def removeUnformattedLine(infile_name):
 	infile=open(infile_name)
@@ -92,11 +127,21 @@ def parse():
 	removeUnformattedLine(infile_name1)
 	removeUnformattedLine(infile_name2)
 
-	handleWarnings(infile_name1+'.tmp')
-	handleWarnings(infile_name2+'.tmp')
+	# we should differentiate the output type is instrumented_lines
+	# file or static_profile file
+
+	if outfile_name.startswith('instrumented_lines'):
+		handleWarningLines(infile_name1+'.tmp')
+		handleWarningLines(infile_name2+'.tmp')
+	elif outfile_name.startswith('static_profile'):
+		handleWarningPairs(infile_name1+'.tmp')
+		handleWarningPairs(infile_name2+'.tmp')
 
 	outfile=open(outfile_name,'w')
-	outfile.writelines(file_and_line_sort(list(set(file_and_line))))
+	if outfile_name.startswith('instrumented_lines'):
+		outfile.writelines(file_and_line_sort(list(set(file_and_line)),False))
+	elif outfile_name.startswith('static_profile'):
+		outfile.writelines(file_and_line_sort(list(set(file_and_line)),True))
 	outfile.close()
 
 	# remove the original file

@@ -87,11 +87,17 @@ public:
 	}
 
 	void RemoveRelationMapping(PStmt *first_pstmt,PStmt *second_pstmt) {
+		if(pstmt_map_.find(first_pstmt)==pstmt_map_.end() ||
+			pstmt_map_.find(second_pstmt)==pstmt_map_.end())
+			return ;
 		pstmt_map_[first_pstmt]->erase(second_pstmt);
 		if(pstmt_map_[first_pstmt]->empty()) {
 			delete pstmt_map_[first_pstmt];
 			pstmt_map_.erase(first_pstmt);
 		}
+		//if first pstmt is equal second pstmt
+		if(first_pstmt==second_pstmt)
+			return ;
 		pstmt_map_[second_pstmt]->erase(first_pstmt);
 		if(pstmt_map_[second_pstmt]->empty()) {
 			delete pstmt_map_[second_pstmt];

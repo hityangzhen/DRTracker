@@ -4,6 +4,7 @@
 #include "core/log.h"
 #include "core/pin_util.h"
 #include <time.h>
+#include <algorithm>
 namespace race
 {
 //static initialize
@@ -169,7 +170,7 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
 INFO_FMT_PRINT("===========thread:[%lx] exit,postpone set size:[%ld]=============\n",
-curr_thd_id,pp_thd_set_.size());
+	curr_thd_id,pp_thd_set_.size());
 	ScopedLock lock(internal_lock_);
 	ProcessWriteReadSync(curr_thd_id,NULL);
 
@@ -314,6 +315,8 @@ void Verifier::AfterPthreadMutexTryLock(thread_t curr_thd_id,
 {
 	if(ret_val==0)
 		AfterPthreadMutexLock(curr_thd_id,curr_thd_clk,inst,addr);
+	else
+		UnblockThread(curr_thd_id);
 }
 
 void Verifier::BeforePthreadRwlockRdlock(thread_t curr_thd_id,
@@ -378,6 +381,8 @@ void Verifier::AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,
 {
 	if(ret_val==0)
 		AfterPthreadRwlockRdlock(curr_thd_id,curr_thd_clk,inst,addr);
+	else
+		UnblockThread(curr_thd_id);
 }
 
 void Verifier::BeforePthreadRwlockTryWrlock(thread_t curr_thd_id,
@@ -391,6 +396,8 @@ void Verifier::AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
 {
 	if(ret_val==0)
 		AfterPthreadRwlockWrlock(curr_thd_id,curr_thd_clk,inst,addr);
+	else
+		UnblockThread(curr_thd_id);
 }
 
 void Verifier::AfterPthreadBarrierInit(thread_t curr_thd_id,
@@ -566,6 +573,7 @@ void Verifier::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	UnblockThread(curr_thd_id);
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
 	curr_vc->Join(&sem_meta->vc);
+	curr_vc->Increment(curr_thd_id);
 }
 
 /**
@@ -577,12 +585,12 @@ void Verifier::ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_
 		return ;
 	VerifyLock();
 	//generate random thread id
-	if(!avail_thd_set_.empty()) {
+	//if(!avail_thd_set_.empty()) {
 		while(RandomThread(avail_thd_set_)!=curr_thd_id) {
 			VerifyUnlock();
 			Sleep(1000);
 		}
-	}
+	//}
 }
 
 /**
@@ -597,14 +605,19 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 	//should wake up the write thread.
 	WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
 
-INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_thd_id);
+INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[%lx]=======\n",
+	curr_thd_id,inst->ToString().c_str(),addr);
 	//get the potential statement
 	std::string file_name=inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
-	DEBUG_ASSERT(pstmt);
+	if(pstmt==NULL) {
+		VerifyUnlock();
+		return ;
+	}
+	// DEBUG_ASSERT(pstmt);
 
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
@@ -625,20 +638,23 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 		bool flag=true;
 		//accumulate the metas into pstmt corresponding metas
 		MAP_KEY_NOTFOUND_NEW(pstmt_metas_map_,pstmt,MetaSet);
-		MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
+		// MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
+		MAP_KEY_NOTFOUND_NEW(thd_ppmetas_map_,curr_thd_id,MetaSet);
 
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			Meta *meta=GetMeta(iaddr);
 			DEBUG_ASSERT(meta);
 			timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
 			pstmt_metas_map_[pstmt]->insert(meta);
-			thd_metas_map_[curr_thd_id]->insert(meta);
+			// thd_metas_map_[curr_thd_id]->insert(meta);
+			thd_ppmetas_map_[curr_thd_id]->insert(meta);
 			//we assume that same inst and the same epoch in current threads'
 			//recent snapshots means that the access is redudant 
 			if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 				continue;
+	
 			//add snapshot
-			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst);
+			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
 			flag=false;
 		}
 		if(!flag) {//postpone current thread
@@ -648,8 +664,12 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx]=======\n",curr_t
 			}
 			PostponeThread(curr_thd_id);
 		}
-		else //important 
+		else {//important
+			//recently accessed metas, current thread need not to be postponed
+			delete thd_ppmetas_map_[curr_thd_id];
+			thd_ppmetas_map_.erase(curr_thd_id); 
 			VerifyUnlock();
+		}
 	} else {
 		//accumulate postponed threads
 		PostponeThreadSet pp_thds;
@@ -923,11 +943,13 @@ void Verifier::ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta)
 		cond_meta->wait_table.begin();iter!=cond_meta->wait_table.end();
 		iter++)
 		curr_vc->Join(&iter->second);
+	INFO_FMT_PRINT("===========current vc:[%s]============",curr_vc->ToString().c_str());
 	//all potential waiters should know the newest vc from the signaler
 	for(CondMeta::ThreadVectorClockMap::iterator iter=
-		cond_meta->signal_table.begin();
-		iter!=cond_meta->signal_table.end();iter++)
-		iter->second=*curr_vc;
+		cond_meta->wait_table.begin();
+		iter!=cond_meta->wait_table.end();iter++)
+		cond_meta->signal_table[iter->first]=*curr_vc;
+	curr_vc->Increment(curr_thd_id);
 }
 
 inline void Verifier::ProcessFree(CondMeta *cond_meta)
@@ -988,8 +1010,11 @@ INFO_PRINT("=================handle race===================\n");
 		PostponeThread(curr_thd_id);
 	}
 	//must free the lock if current thread execute continuously
-	else
-		VerifyUnlock();
+	else {
+		//bring the postponed thread's metas into history metas
+		ClearPostponedThreadMetas(curr_thd_id);
+		VerifyUnlock();		
+	}
 }
 
 /**
@@ -997,7 +1022,7 @@ INFO_PRINT("=================handle race===================\n");
  */
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
-INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
+// INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
 
 	//correspond to before_mutex_lock
 	InternalLock();
@@ -1006,6 +1031,8 @@ INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",cur
 	//operations, we should not postpone it
 
 	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
+		//bring the postponed thread's metas into history metas
+		ClearPostponedThreadMetas(curr_thd_id);
 		InternalUnlock();
 		VerifyUnlock();		
 		return ;
@@ -1024,13 +1051,16 @@ INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",cur
 	clock_gettime(CLOCK_REALTIME,&ts);
 	ts.tv_sec+=2;
 	thd_smp_map_[curr_thd_id]->TimedWait(&ts);
-	//
+
+	//after waking up
 	InternalLock();
 	pp_thd_set_.erase(curr_thd_id);
 	avail_thd_set_.insert(curr_thd_id);
+	//bring the postponed thread's metas into history metas
+	ClearPostponedThreadMetas(curr_thd_id);
 	InternalUnlock();
 
-INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
+// INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
 }
 
 void Verifier::ChooseRandomThreadAfterAllUnavailable()
@@ -1038,7 +1068,7 @@ void Verifier::ChooseRandomThreadAfterAllUnavailable()
 	if(pp_thd_set_.empty())
 		return ;
 	thread_t thd_id=RandomThread(pp_thd_set_);
-INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",thd_id);
+//INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",thd_id);
 	DEBUG_ASSERT(thd_smp_map_[thd_id]);
 	// if(thd_smp_map_[thd_id]->IsWaiting())
 	// 	thd_smp_map_[thd_id]->Post();
@@ -1065,6 +1095,22 @@ void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds)
 		// delete thd_metas_map_[*iter];
 		// thd_metas_map_.erase(*iter);
 	}
+}
+
+inline
+void Verifier::ClearPostponedThreadMetas(thread_t curr_thd_id) {
+	MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
+	DEBUG_ASSERT(thd_ppmetas_map_[curr_thd_id]);
+	// for(MetaSet::iterator iter=thd_ppmetas_map_[curr_thd_id]->begin();
+	// 	iter!=thd_ppmetas_map_[curr_thd_id]->end();iter++) {
+	// 	thd_metas_map_[curr_thd_id]->insert(*iter);
+	// }
+	std::copy(thd_ppmetas_map_[curr_thd_id]->begin(),
+		thd_ppmetas_map_[curr_thd_id]->end(),
+		inserter(*thd_metas_map_[curr_thd_id],
+		thd_metas_map_[curr_thd_id]->end()));
+	delete thd_ppmetas_map_[curr_thd_id];	
+	thd_ppmetas_map_.erase(curr_thd_id);
 }
 
 inline 
@@ -1097,7 +1143,8 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 		return ;
 	MetaSet *first_metas=pstmt_metas_map_[first_pstmt];
 	MAP_KEY_NOTFOUND_NEW(pstmt_metas_map_,second_pstmt,MetaSet);
-	MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
+	//MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
+	MAP_KEY_NOTFOUND_NEW(thd_ppmetas_map_,curr_thd_id,MetaSet);
 	MetaSet *second_metas=pstmt_metas_map_[second_pstmt];
 
 	bool flag=false;
@@ -1107,11 +1154,14 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 		Meta *meta=GetMeta(iaddr);
 		if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 			continue;
-// INFO_FMT_PRINT("+++++++++++++++++++++raced meta:[%lx]+++++++++++++++++++++\n",curr_thd_id);
 		//corresponding pstmt access the shared meta
 		if(first_metas->find(meta)!=first_metas->end()) {
-			for(ThreadMetasMap::iterator iter=thd_metas_map_.begin();
-				iter!=thd_metas_map_.end();iter++) {
+
+INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n",
+	first_pstmt->line_,meta->addr);
+			//verify the postponed thread's metas
+			for(ThreadMetasMap::iterator iter=thd_ppmetas_map_.begin();
+				iter!=thd_ppmetas_map_.end();iter++) {
 				//check meta only in postponed thread
 				if(pp_thd_set_.find(iter->first)!=pp_thd_set_.end() && 
 					iter->second!=NULL && 
@@ -1160,18 +1210,26 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 								curr_thd_id,inst,type);
 							meta->AddRacedInstPair(meta_ss->inst,inst);
 						}
-					}
+					}// else if(type==RACE_EVENT_READ)
 				}
-				//traverse thread history snapshot
+			}// verify the postponed thread's metas
+
+			//postponed racing metas will be ignored if it has been verified racy
+			//detect the history raced metas
+			for(ThreadMetasMap::iterator iter=thd_metas_map_.begin();
+				iter!=thd_metas_map_.end();iter++) {
 				if(iter->first!=curr_thd_id && iter->second!=NULL && 
 					iter->second->find(meta)!=iter->second->end()) {
 					MetaSnapshotDeque *meta_ss_deq=meta->meta_ss_map[iter->first];
-
+					//traverse thread history snapshot
 					for(MetaSnapshotDeque::iterator iiter=meta_ss_deq->begin();
 						*iiter && iiter!=meta_ss_deq->end();iiter++) {
 						MetaSnapshot *meta_ss=*iiter;
+
 						if(meta->RacedInstPair(meta_ss->inst,inst))
 							continue ;
+INFO_FMT_PRINT("===========history meta:[%lx],inst:[%s]=============\n",
+meta->addr,inst->ToString().c_str());
 						//report history race and add to race db
 						RaceType race_type=HistoryRace(meta_ss,iter->first,curr_thd_id,
 							type);
@@ -1181,47 +1239,38 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_a
 								curr_thd_id,inst);
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
-							flag=true;
+							// flag=true;
 							meta->AddRacedInstPair(meta_ss->inst,inst);
+							//remove the raced pstmt pair mapping
+							prace_db_->RemoveRelationMapping(meta_ss->pstmt,second_pstmt);
+							if(prace_db_->HasFullyVerified(meta_ss->pstmt)) {
+								if(pstmt_metas_map_.find(meta_ss->pstmt)!=
+									pstmt_metas_map_.end()) {
+									delete pstmt_metas_map_[meta_ss->pstmt];
+									pstmt_metas_map_.erase(meta_ss->pstmt);
+								}
+							}
+							if(prace_db_->HasFullyVerified(second_pstmt)) {
+								if(pstmt_metas_map_.find(second_pstmt)!=
+									pstmt_metas_map_.end()) {
+									delete pstmt_metas_map_[second_pstmt];
+									pstmt_metas_map_.erase(second_pstmt);
+								}
+							}
 						}
-						// switch(HistoryRace(meta_ss,iter->first,curr_thd_id,type)) {
-						// 	case WRITETOWRITE:
-						// 		PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
-						// 			meta_ss->inst,curr_thd_id,inst);
-						// 		ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
-						// 			curr_thd_id,inst,type);
-						// 		flag=true;
-						// 		meta->AddRacedInstPair(meta_ss->inst,inst);
-						// 		break;
-						// 	case READTOWRITE:
-						// 		PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
-						// 			meta_ss->inst,curr_thd_id,inst);
-						// 		ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
-						// 			curr_thd_id,inst,type);
-						// 		flag=true;
-						// 		meta->AddRacedInstPair(meta_ss->inst,inst);
-						// 		break;
-						// 	case WRITETOREAD:
-						// 		PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
-						// 			meta_ss->inst,curr_thd_id,inst);
-						// 		ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
-						// 			curr_thd_id,inst,type);
-						// 		flag=true;
-						// 		meta->AddRacedInstPair(meta_ss->inst,inst);
-						// 		break;
-						// 	default:
-						// 		break;
-						// }
-					}
+					}// traverse thread history snapshot
 				}
-			}
- 		}
+			}// detect the history raced metas
+ 		}// corresponding pstmt access the shared meta
  		//add current thread's snapshot
- 		AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst);
+ 		AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,second_pstmt);
+		DEBUG_ASSERT(second_metas);
 		second_metas->insert(meta);
-		thd_metas_map_[curr_thd_id]->insert(meta);
+		// thd_metas_map_[curr_thd_id]->insert(meta);
+		thd_ppmetas_map_[curr_thd_id]->insert(meta);
+
 	}
-	//
+	//verify postponed raced meta
 	if(flag) {
 		prace_db_->RemoveRelationMapping(first_pstmt,second_pstmt);
 		if(prace_db_->HasFullyVerified(first_pstmt)) {
@@ -1271,6 +1320,8 @@ void Verifier::LoadSpinReads()
 	char buffer[200];
 	std::fstream in(knob_->ValueStr("exiting_cond_lines").c_str(),
 		std::ios::in);
+	if(!in)
+		return ;
 	while(!in.eof()) {
 		in.getline(buffer,200,'\n');
 		fn=strtok(buffer,delimit);

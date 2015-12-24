@@ -67,7 +67,7 @@ using namespace std;
 // 	REGISTER_TEST(Run,2);
 // }//namespace test2
 
-// // test3:TN.Synchronization via LockWhen, signaller gets there first.
+// // test3:TP.Synchronization via LockWhen, signaller gets there first. 
 // namespace test3 {
 // 	// Two write accesses to GLOB are synchronized via conditional critical section.
 // 	// Note that LockWhen() happens first (we use sleep(1) to make sure)!
@@ -347,58 +347,58 @@ using namespace std;
 // 	REGISTER_TEST(Run,13);
 // }//namespace test13
 
-// test14:TN.Synchronization via PCQ, reads, 2 workers.
-namespace test14 {
-	int glob=0;
-	// This test is properly synchronized, but currently (Dec 2007)
-	// helgrind reports a false positive.
-	//
-	// This test is similar to test11, but uses PCQ (semaphore).
-	//
-	// Putter2:                  Putter1:                     Getter:
-	// 1. read(GLOB)             a. read(GLOB)
-	// 2. Q2.Put() ----\         b. Q1.Put() -----\           .
-	//                  \                          \--------> A. Q1.Get()
-	//                   \----------------------------------> B. Q2.Get()
-	//                                                        C. write(GLOB)
+// // test14:TN.Synchronization via PCQ, reads, 2 workers.
+// namespace test14 {
+// 	int glob=0;
+// 	// This test is properly synchronized, but currently (Dec 2007)
+// 	// helgrind reports a false positive.
+// 	//
+// 	// This test is similar to test11, but uses PCQ (semaphore).
+// 	//
+// 	// Putter2:                  Putter1:                     Getter:
+// 	// 1. read(GLOB)             a. read(GLOB)
+// 	// 2. Q2.Put() ----\         b. Q1.Put() -----\           .
+// 	//                  \                          \--------> A. Q1.Get()
+// 	//                   \----------------------------------> B. Q2.Get()
+// 	//                                                        C. write(GLOB)
 
-	//use semephore to simulate consumer-producer
+// 	//use semephore to simulate consumer-producer
 
-	void Putter(void ) {
-		assert(glob!=-777);
-		PC_SEM_PRODUCE(1);
-	}
+// 	void Putter(void ) {
+// 		if(glob!=-777) { }
+// 		PC_SEM_PRODUCE(1);
+// 	}
 
-	void Putter1(void ) {
-		assert(glob!=-777);
-		PC_SEM_PRODUCE(2);
-	}
+// 	void Putter1(void ) {
+// 		if(glob!=-777) { }
+// 		PC_SEM_PRODUCE(2);
+// 	}
 
-	void Getter(void ) {
-		PC_SEM_CONSUME(1);
-		PC_SEM_CONSUME(2);
-		glob++;	
-	}	
+// 	void Getter(void ) {
+// 		PC_SEM_CONSUME(1);
+// 		PC_SEM_CONSUME(2);
+// 		glob++;	
+// 	}	
 
-	void Run() {
-		HANDLER Worker1=(HANDLER)Putter;
-		HANDLER Worker2=(HANDLER)Putter1;
-		HANDLER Worker3=(HANDLER)Getter;
-		PC_SEM_RUN(2,3,1);
-	}
-	REGISTER_TEST(Run,14);
-}//namespace test14
+// 	void Run() {
+// 		HANDLER Worker1=(HANDLER)Putter;
+// 		HANDLER Worker2=(HANDLER)Putter1;
+// 		HANDLER Worker3=(HANDLER)Getter;
+// 		PC_SEM_RUN(2,3,1);
+// 	}
+// 	REGISTER_TEST(Run,14);
+// }//namespace test14
 
 // // test16:TN.Barrier,2 threads
 // namespace test16 {
 // 	int glob=0;
 
 // 	void Worker1(void ) {
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_barrier_wait(&b);
 // 	}
 // 	void Worker2(void ) {
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_barrier_wait(&b);
 // 		glob=2;
 // 	}
@@ -432,7 +432,7 @@ namespace test14 {
 // 		for(int i=0;i<5;i++) {
 // 			while(true) {
 // 				if(pthread_rwlock_tryrdlock(&rwlock)==0) {
-// 					assert(glob!=-777);
+// 					if(glob!=-777) { }
 // 					pthread_rwlock_unlock(&rwlock);
 // 					break;
 // 				}
@@ -453,7 +453,7 @@ namespace test14 {
 // 	void Worker_ReaderLock(void ) {
 // 		for(int i=0;i<5;i++) {
 // 			pthread_rwlock_rdlock(&rwlock);
-// 			assert(glob!=-777);
+// 			if(glob!=-777) { }
 // 			pthread_rwlock_unlock(&rwlock);
 // 			usleep(1000);
 // 		}		
@@ -492,7 +492,7 @@ namespace test14 {
 // 		pthread_mutex_unlock(&m);
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -500,7 +500,7 @@ namespace test14 {
 // 		PC_SEM_CONSUME(1);
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 	}
 
 // 	void Run() {
@@ -530,7 +530,7 @@ namespace test14 {
 // 			PC_SEM_PRODUCE(2);
 // 		}
 // 		pthread_mutex_lock(&m);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m);
 // 	}
 // 	void Putter1(void ) {
@@ -543,7 +543,7 @@ namespace test14 {
 // 		PC_SEM_CONSUME(1);
 // 		PC_SEM_CONSUME(2);
 // 		usleep(100000);
-// 		assert(glob==2);
+// 		if(glob==2) { }
 // 	}
 
 // 	void Run() {
@@ -589,7 +589,7 @@ namespace test14 {
 // 	void Reader(void ) {
 // 		usleep(480000);
 // 		pthread_mutex_lock(&m);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -678,7 +678,7 @@ namespace test14 {
 // 	void Reader(void ) {
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -724,7 +724,7 @@ namespace test14 {
 // 		}
 // 		pthread_mutex_lock(&m);
 // 		pthread_mutex_lock(&m1);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m1);
 // 		pthread_mutex_unlock(&m);
 // 	}
@@ -788,7 +788,7 @@ namespace test14 {
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
 // 		pthread_mutex_lock(&m1);
-// 		assert(glob!=-777);
+// 		if(glob!=-777) { }
 // 		pthread_mutex_unlock(&m1);
 // 		pthread_mutex_unlock(&m);
 // 	}
@@ -854,13 +854,13 @@ namespace test14 {
 // 	void Putter(void ) {
 // 		glob=1;
 // 		PC_SEM_PRODUCE(1);
-// 		assert(glob==1);
+// 		if(glob==1) { }
 // 	}
 
 // 	void Getter(void ) {
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
-// 		assert(glob==1);
+// 		if(glob==1) { }
 // 	}
 
 // 	void Run() {
@@ -887,7 +887,7 @@ namespace test14 {
 // 	int glob=0;
 
 // 	void Putter(void ) {
-// 		assert(glob==0);
+// 		if(glob==0) { }
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
 // 		glob=1;
@@ -925,7 +925,7 @@ namespace test14 {
 // 	int glob=0;
 
 // 	void Putter(void ) {
-// 		assert(glob==0);
+// 		if(glob==0) { }
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
 // 		glob=1;
@@ -936,7 +936,7 @@ namespace test14 {
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
-// 		assert(glob<=1);
+// 		if(glob<=1) { }
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -1240,7 +1240,7 @@ namespace test14 {
 // 		HANDLER Worker3=(HANDLER)Reader;
 // 		HANDLER Worker4=(HANDLER)Reader;
 // 		PTHREAD_RUN(2);
-// 		assert(glob==20);
+// 		if(glob==20) { }
 // 	}
 // 	REGISTER_TEST(Run,57);
 // }//namespace test57
@@ -1343,11 +1343,11 @@ namespace test14 {
 // 	//
 // 	int glob=0;
 // 	void Worker1(void ) {
-// 		assert(glob==0);
+// 		if(glob==0) { return; }
 // 	}
 // 	void Worker2(void ) {
 // 		usleep(100000);
-// 		assert(glob==0);
+// 		if(glob==0) {  }
 // 		PC_SEM_PRODUCE(1);
 // 	}
 // 	void Worker3(void ) {
@@ -1399,37 +1399,37 @@ namespace test14 {
 // 	REGISTER_TEST(Run,65);
 // }//namespace test65
 
-// // test67:TP.Race between Signaller1 and Waiter2
-// namespace test67{
-// 	// Here we create a happens-before arc between Signaller1 and Waiter2
-// 	// even though there should be no such arc.
-// 	// However, it's probably improssible (or just very hard) to avoid it.
-// 	int glob=0;
-// 	int c1=0,c2=0;
-// 	void Signaller1(void ) {
-// 		glob=1;
-// 		CV_SIGNAL_COND(c1,1);
-// 	}
-// 	void Signaller2(void ) {
-// 		usleep(100000);
-// 		CV_SIGNAL_COND(c2,1);
-// 	}
-// 	void Waiter1(void ) {
-// 		CV_WAIT_COND(c1,1);
-// 	}
-// 	void Waiter2(void ) {
-// 		CV_WAIT_COND(c2,1);
-// 		glob=2;
-// 	}
-// 	void Run() {
-// 		HANDLER Worker1=(HANDLER)Signaller1;
-// 		HANDLER Worker2=(HANDLER)Signaller2;
-// 		HANDLER Worker3=(HANDLER)Waiter1;
-// 		HANDLER Worker4=(HANDLER)Waiter2;
-// 		PTHREAD_RUN(4);
-// 	}
-// 	REGISTER_TEST(Run,67);
-// }//namespace test67
+// // // test67:TP.Race between Signaller1 and Waiter2
+// // namespace test67{
+// // 	// Here we create a happens-before arc between Signaller1 and Waiter2
+// // 	// even though there should be no such arc.
+// // 	// However, it's probably improssible (or just very hard) to avoid it.
+// // 	int glob=0;
+// // 	int c1=0,c2=0;
+// // 	void Signaller1(void ) {
+// // 		glob=1;
+// // 		CV_SIGNAL_COND(c1,1);
+// // 	}
+// // 	void Signaller2(void ) {
+// // 		usleep(100000);
+// // 		CV_SIGNAL_COND(c2,1);
+// // 	}
+// // 	void Waiter1(void ) {
+// // 		CV_WAIT_COND(c1,1);
+// // 	}
+// // 	void Waiter2(void ) {
+// // 		CV_WAIT_COND(c2,1);
+// // 		glob=2;
+// // 	}
+// // 	void Run() {
+// // 		HANDLER Worker1=(HANDLER)Signaller1;
+// // 		HANDLER Worker2=(HANDLER)Signaller2;
+// // 		HANDLER Worker3=(HANDLER)Waiter1;
+// // 		HANDLER Worker4=(HANDLER)Waiter2;
+// // 		PTHREAD_RUN(4);
+// // 	}
+// // 	REGISTER_TEST(Run,67);
+// // }//namespace test67
 
 
 
@@ -1584,7 +1584,7 @@ namespace test14 {
 // 			pthread_mutex_lock(&m);
 // 			pthread_mutex_unlock(&m);
 // 		}
-// 		assert(*ptr==777);
+// 		if(*ptr==777) { return ; }
 // 	}
 // 	void Run() {
 // 		HANDLER Worker1=(HANDLER)Writer;
@@ -1611,10 +1611,10 @@ namespace test14 {
 // 	}
 // 	void Worker2() {
 // 		while(ATOMIC_INCREMENT(&s_x,0)==0) ;
-// 		assert(s_y>=0);
+// 		if(s_y>=0) { return ; }
 // 	}
 // 	void Run() {
-// 		assert(s_dummy[0]==0); //avoid compiler warning about 's_dummy unused'
+// 		if(s_dummy[0]==0) { } //avoid compiler warning about 's_dummy unused'
 // 		PTHREAD_RUN(2);
 // 	}
 // 	REGISTER_TEST(Run,84);
@@ -1770,8 +1770,8 @@ namespace test14 {
 //   		virtual ~A() { a = 4; }
 // 	};
 // 	struct B : A {
-//   		B()  { assert(a == 1); }
-//   		virtual ~B() { assert(a == 3); }
+//   		B()  { if(a == 1) { } }
+//   		virtual ~B() { if(a == 3) { } }
 // 	};
 // 	struct C : B {
 //   		C()  { a = 2; }
@@ -1834,7 +1834,7 @@ namespace test14 {
 // 			int *p=glob;
 // 			mu.Unlock();
 // 			if(p) {
-// 				assert(p[42]==777);
+// 				if(p[42]==777) { }
 // 				break;
 // 			}
 // 		}
@@ -2052,15 +2052,15 @@ namespace test14 {
 // 	int glob3=0;
 // 	int glob4=0;
 // 	void Worker1() {
-// 		glob1=1;assert(glob1);
+// 		glob1=1;assert(glob1!=-1);
 // 		glob2=1;
-// 		glob3=1;assert(glob3);
+// 		glob3=1;assert(glob3!=-1);
 // 		glob4=1;
 // 	}
 // 	void Worker2() {
 // 		usleep(100000);
-// 		assert(glob1);
-// 		assert(glob2);
+// 		assert(glob1!=-1);
+// 		assert(glob2!=-1);
 // 		glob3=1;
 // 		glob4=1;
 // 	}
@@ -2068,8 +2068,8 @@ namespace test14 {
 // 		usleep(100000);
 // 		glob1=1;
 // 		glob2=1;
-// 		assert(glob3);
-// 		assert(glob4);
+// 		assert(glob3!=-1);
+// 		assert(glob4!=-1);
 // 	}
 // 	void Run() {
 // 		PTHREAD_RUN(3);
@@ -2169,7 +2169,7 @@ namespace test14 {
 // 	class Foo {
 // 	public:
 // 		Foo() {a_=42;}
-// 		void Check() const {assert(a_==42);}
+// 		void Check() const {assert(a_==42); }
 // 	private:
 // 		int a_;
 // 	};
@@ -2198,7 +2198,7 @@ namespace test14 {
 // 	//   pthread_create with the new thread
 // 	// and
 // 	//   thread exit with pthread_join
-// 	const int N=32;
+// 	const int N=4;
 // 	static int glob[N];
 // 	void Worker(void *a) {
 // 		usleep(100000);
@@ -2302,7 +2302,7 @@ namespace test14 {
 // 	}
 // 	void Worker() {
 // 		static int x=Foo();
-// 		assert(x==1);
+// 		assert(x!=-1);
 // 	}
 // 	void Run() {
 // 		HANDLER Worker1=(HANDLER)Worker;
@@ -2314,14 +2314,14 @@ namespace test14 {
 
 // // test117: TN. Many calls to function-scope static inititialization
 // namespace test117 {
-// 	const int N=50;
+// 	const int N=5;
 // 	int Foo() {
 // 		usleep(20000);
 // 		return 1;
 // 	}
 // 	void Worker() {
 // 		static int foo=Foo();
-// 		assert(foo==1);
+// 		assert(foo!=-1);
 // 	}
 // 	void Run() {
 // 		Thread *t[N];
@@ -2360,11 +2360,11 @@ namespace test14 {
 // 	int glob=0;
 // 	void Worker1() {
 // 		glob=1;
-// 		assert(glob);
+// 		assert(glob!=-1);
 // 	}
 // 	void Worker2() {
 // 		usleep(100000);
-// 		assert(glob>=0);
+// 		assert(glob!=-1);
 // 	}
 // 	void Run() {
 // 		PTHREAD_RUN(2);
@@ -2372,40 +2372,40 @@ namespace test14 {
 // 	REGISTER_TEST(Run,2);
 // }//namespace test120
 
-// // test121: TN. DoubleCheckedLocking
-// namespace test121 {
-// 	struct Foo {
-// 		uintptr_t padding1[16];
-// 		uintptr_t a;
-// 		uintptr_t padding2[16];
-// 	};
+// test121: TN. DoubleCheckedLocking
+namespace test121 {
+	struct Foo {
+		uintptr_t padding1[16];
+		volatile uintptr_t a;
+		uintptr_t padding2[16];
+	};
 
-// 	Foo *foo;
+	Foo *foo;
 
-// 	void InitMe() {
-// 		if(!foo) {
-// 			pthread_mutex_lock(&m);
-// 			if(!foo)
-// 				foo=new Foo;
-// 			foo->a=42;
-// 			pthread_mutex_unlock(&m);
-// 		}
-// 	}
-// 	void UseMe() {
-// 		InitMe();
-// 		assert(foo);
-// 		if(foo->a!=42)
-// 			printf("foo->a = %d (should be 42)\n",(int)foo->a);
-// 	}
-// 	void Worker1() { UseMe(); }
-// 	void Worker2() { UseMe(); }
-// 	void Worker3() { UseMe(); }
-// 	void Run() {
-// 		PTHREAD_RUN(3);
-// 		delete foo;
-// 	}
-// 	REGISTER_TEST(Run,121);
-// }//namespace test121
+	void InitMe() {
+		if(!foo) {
+			pthread_mutex_lock(&m);
+			if(!foo)
+				foo=new Foo;
+			foo->a=42;
+			pthread_mutex_unlock(&m);
+		}
+	}
+	void UseMe() {
+		InitMe();
+		assert(foo);
+		if(foo->a!=42)
+			printf("foo->a = %d (should be 42)\n",(int)foo->a);
+	}
+	void Worker1() { UseMe(); }
+	void Worker2() { UseMe(); }
+	void Worker3() { UseMe(); }
+	void Run() {
+		PTHREAD_RUN(3);
+		delete foo;
+	}
+	REGISTER_TEST(Run,121);
+}//namespace test121
 
 // // test122: TN. DoubleCheckedLocking2
 // namespace test122 {
@@ -2596,7 +2596,7 @@ namespace test14 {
 // 	const int kIdx=77;
 // 	StealthNotification n;
 // 	void Read() {
-// 		assert(glob[kIdx]==777);
+// 		if(glob[kIdx]==777) { }
 // 		n.signal();
 // 	}
 // 	void Free() {
@@ -2624,7 +2624,7 @@ namespace test14 {
 // 	}
 // 	void Read() {
 // 		n.wait();
-// 		assert(glob[kIdx]!=0x123456);
+// 		if(glob[kIdx]!=0x123456) { }
 // 	}
 // 	void Run() {
 // 		glob=(int *)malloc(100 * sizeof(int));
@@ -2675,7 +2675,7 @@ namespace test14 {
 // 	  	//   2. Call ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu)
 // 	  	//      in InitAllBeforeStartingThreads()
 // 	  	//   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).
-//   		assert(vec->empty());
+//   		if(vec->empty()) { }
 //   		delete vec;
 // 	}
 
@@ -2694,7 +2694,7 @@ namespace test14 {
 // // test506: TN. massive HB's using Barriers
 // namespace test506 {
 // 	int glob=0;
-// 	const int N=64,ITERATOR=100;
+// 	const int N=8,ITERATOR=100;
 // 	Barrier *barrier[ITERATOR];
 // 	Mutex mu;
 
@@ -2716,7 +2716,7 @@ namespace test14 {
 // 			for(int i=0;i<N;i++)
 // 				pool.Add(NewCallBack(Worker));
 // 		}
-// 		assert(glob==N*ITERATOR);
+// 		if(glob==N*ITERATOR) { }
 // 		for(int i=0;i<ITERATOR;i++)
 // 			delete barrier[i];
 // 	}
@@ -2887,7 +2887,7 @@ namespace test14 {
 // 		// unlink deletes a file 'filename'
 //   		// which exits spin-loop in Waiter1().
 //   		printf("  Deleting file...\n");
-//   		assert(unlink(file_name)==0);
+//   		if(unlink(file_name)==0) { }
 // 	}
 // 	void Waiter1() {
 // 		FILE *tmp;
@@ -2904,7 +2904,7 @@ namespace test14 {
 // 		// rmdir deletes a directory 'dir_name'
 //   		// which exit spin-loop in Waker().
 //   		printf("  Deleting directory...\n");
-//   		assert(rmdir(dir_name) == 0);
+//   		if(rmdir(dir_name) == 0) { }
 // 	}
 // 	void Waiter2() {
 // 		DIR *tmp;
@@ -2917,7 +2917,7 @@ namespace test14 {
 // 	}
 // 	void Run() {
 // 		dir_name=strdup("/tmp/data-race-XXXXXX");
-// 		assert(mkdtemp(dir_name)!=NULL);//dir_name is unqiue
+// 		if(mkdtemp(dir_name)!=NULL) { }//dir_name is unqiue
 
 // 		file_name=strdup((std::string()+dir_name+"/XXXXXX").c_str());
 // 		const int fd=mkstemp(file_name);//create and open temp file
@@ -3045,7 +3045,7 @@ namespace test14 {
 // 		*value=2;
 // 		pthread_setspecific(key,value);
 // 		int *read=(int *)pthread_getspecific(key);
-// 		assert(read==value);
+// 		if(read==value) { }
 // 	}
 // 	void Worker1() { DoWork(0); }
 // 	void Worker2() { DoWork(1); }
@@ -3056,7 +3056,7 @@ namespace test14 {
 // 		t.Start();
 // 		t.Join();
 // 		for(int i=0;i<2;i++)
-// 			assert(tsd_array[i]==kInitialValue);
+// 			if(tsd_array[i]==kInitialValue) { }
 // 	}
 // 	REGISTER_TEST(Run,606);
 // }//namespace test606
@@ -3075,7 +3075,7 @@ namespace test14 {
 // 		timestruct.tm_yday=0;
 
 // 		time_t ret=mktime(&timestruct);
-// 		assert(ret!=-1);
+// 		if(ret!=-1) { }
 // 	}
 
 // 	void Run() {
@@ -3098,15 +3098,15 @@ namespace test14 {
 // 			switch(i % 4) {
 //       			case 0:
 //         			// This read is protected correctly.
-//         			mu1.Lock(); assert(glob >= 0); mu1.Unlock();
+//         			mu1.Lock(); if(glob >= 0) { } mu1.Unlock();
 //         			break;
 //       			case 1:
 //         			// Here we used the wrong lock! The reason of the race is here.
-//         			mu2.Lock(); assert(glob >= 0); mu2.Unlock();
+//         			mu2.Lock(); if(glob >= 0) { } mu2.Unlock();
 //         			break;
 //       			case 2:
 //         			// This read is protected correctly.
-//         			mu1.Lock(); assert(glob >= 0); mu1.Unlock();
+//         			mu1.Lock(); if(glob >= 0) { } mu1.Unlock();
 //         			break;
 //       			case 3:
 //         			// This write is protected correctly.
@@ -3215,7 +3215,7 @@ namespace test14 {
 // }//namespace test310
 
 // // test311:A test with a very deep stack
-// namespace test312 {
+// namespace test311 {
 // 	int glob=0;
 // 	void RacyWrite() { glob++; }
 // 	void Fun1() { RacyWrite(); }
@@ -3252,11 +3252,11 @@ namespace test14 {
 // 	Mutex mu;
 // 	int flag;
 // 	void Worker1() {
-// 		sleep(1);
+// 		// sleep(1);
 // 		mu.Lock();
 // 		bool f=flag;
 // 		mu.Unlock();
-// 		if(f)
+// 		if(!f)
 // 			glob++;
 // 	}
 // 	void Worker2() {

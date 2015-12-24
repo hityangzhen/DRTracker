@@ -760,6 +760,7 @@ void Detector::ProcessAfterSemWait(thread_t curr_thd_id,SemMeta *meta)
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	DEBUG_ASSERT(curr_vc);
 	curr_vc->Join(&meta->vc);
+	curr_vc->Increment(curr_thd_id);
 }
 
 void Detector::LoadLoops()

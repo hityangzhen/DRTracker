@@ -95,14 +95,15 @@ namespace race
 	public:
 		typedef std::vector<Race *> Vec;
 		enum STATUS {
+			UNKNOWN,
 			HARMFUL,
-			BENIGN
+			BENIGN,
 		};
 		int exec_id() { return exec_id_; }
 		address_t addr() { return addr_; }
 		void set_status(STATUS s) { status_=s; } 
 	protected:
-		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL),status_(HARMFUL)
+		Race():exec_id_(-1),addr_(INVALID_ADDRESS),static_race_(NULL),status_(UNKNOWN)
 		{}
 		~Race() {
 			for(RaceEvent::Vec::iterator iter=event_vec_.begin();

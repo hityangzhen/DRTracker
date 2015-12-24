@@ -54,8 +54,10 @@ public:
 	void Lock() { assert(0==pthread_mutex_lock(&mu_)); }
 	bool TryLock() { return (0==pthread_mutex_trylock(&mu_)); }
 	void Unlock() {
-		if(signal_at_unlock_)
+		if(signal_at_unlock_) {
 			assert(0==pthread_cond_signal(&cv_));
+			signal_at_unlock_=false;			
+		}
 		assert(0==pthread_mutex_unlock(&mu_));
 	}
 	//not really reader locks

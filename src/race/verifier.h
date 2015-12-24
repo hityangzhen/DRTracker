@@ -12,7 +12,7 @@
 #include "core/pin_sync.hpp"
 #include "core/vector_clock.h"
 #include "core/loop.h"
-
+#include "core/log.h"
 namespace race 
 {
 
@@ -24,6 +24,8 @@ namespace race
 	if((map).find(key)==(map).end() || (map)[key]==NULL) \
 		(map)[key]=new value_type
 
+#define THD_METAS_LEN 60
+
 class Verifier:public Analyzer {
 protected:
 	//limit the snapshot vector length
@@ -31,12 +33,13 @@ protected:
 	//meta access snapshot
 	class MetaSnapshot {
 	public:
-		MetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i):thd_clk(clk),type(t),
-			inst(i) {}
+		MetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i,PStmt *s):thd_clk(clk),type(t),
+			inst(i),pstmt(s) {}
 		virtual ~MetaSnapshot() {}
 		timestamp_t thd_clk;
 		RaceEventType type;
 		Inst *inst;
+		PStmt *pstmt;
 	};
 	typedef std::deque<MetaSnapshot *> MetaSnapshotDeque;
 	typedef std::tr1::unordered_map<thread_t,MetaSnapshotDeque *> MetaSnapshotsMap;
@@ -61,7 +64,7 @@ protected:
 				for(MetaSnapshotDeque::iterator iiter=meta_ss_deq->begin();
 					iiter!=meta_ss_deq->end();iiter++)
 					delete *iiter;
-				delete iter->second;
+				delete meta_ss_deq;
 			}
 			//clear the value
 			delete []lastest_values;
@@ -357,6 +360,8 @@ protected:
   	void ProcessFree(SemMeta *sem_meta);
 		
 	thread_t RandomThread(std::set<thread_t>&thd_set) {
+		if(thd_set.empty())
+			return 0;
 		srand((unsigned)time(NULL));
 		//simply iterate
 		if(thd_set.size()==1)
@@ -393,8 +398,8 @@ protected:
 		PostponeThreadSet &pp_thds);
 	//wrapper function
 	virtual void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
-		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst) {
-		MetaSnapshot *meta_ss=new MetaSnapshot(curr_thd_clk,type,inst);
+		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s) {
+		MetaSnapshot *meta_ss=new MetaSnapshot(curr_thd_clk,type,inst,s);
 		meta->AddMetaSnapshot(curr_thd_id,meta_ss);
 	}
 	//only consider timestamp,curr_type is unused
@@ -416,6 +421,7 @@ protected:
 	void HandleRace(PostponeThreadSet *pp_thds,thread_t curr_thd_id);
 	void HandleNoRace(thread_t curr_thd_id);
 
+	void ClearPostponedThreadMetas(thread_t curr_thd_id);
 	void ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas);
 
 	//need to be protected by sync
@@ -459,8 +465,10 @@ protected:
 	BlockThreadSet blk_thd_set_;
 	//metas belong to accessed pstmt
 	PStmtMetasMap pstmt_metas_map_;
-	//thread accessed metas
+	//thread accessed metas-history metas
 	ThreadMetasMap thd_metas_map_;
+	//postponed threads' metas
+	ThreadMetasMap thd_ppmetas_map_;
 	//thread corresponding semaphore
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
