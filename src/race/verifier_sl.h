@@ -1,7 +1,8 @@
 #ifndef __VERIFIER_SL_H
 #define __VERIFIER_SL_H
 
-//Use the simple_lock method to improve the precision
+//Use the simple_lock dynamic data race detection engine to
+//improve the precision.
 
 #include "race/verifier.h"
 

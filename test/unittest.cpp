@@ -67,45 +67,45 @@ using namespace std;
 // 	REGISTER_TEST(Run,2);
 // }//namespace test2
 
-// // test3:TP.Synchronization via LockWhen, signaller gets there first. 
-// namespace test3 {
-// 	// Two write accesses to GLOB are synchronized via conditional critical section.
-// 	// Note that LockWhen() happens first (we use sleep(1) to make sure)!
-// 	//
-// 	// Waiter:                           Waker:
-// 	// 1. COND = 0
-// 	// 2. Start(Waker)
-// 	//                                   a. write(GLOB)
-// 	//                                   b. MU.Lock()
-// 	//                                   c. COND = 1
-// 	//                              /--- d. MU.Unlock()
-// 	// 3. MU.LockWhen(COND==1) <---/
-// 	// 4. MU.Unlock()
-// 	// 5. write(GLOB)
-// 	int glob=0;
-// 	int cond=0;
-// 	Mutex mu;
-// 	void Waker() {
-// 		usleep(100000);//make sure the waiter blocks
-// 		glob=1;
+// test3:TP.Synchronization via LockWhen, signaller gets there first. 
+namespace test3 {
+	// Two write accesses to GLOB are synchronized via conditional critical section.
+	// Note that LockWhen() happens first (we use sleep(1) to make sure)!
+	//
+	// Waiter:                           Waker:
+	// 1. COND = 0
+	// 2. Start(Waker)
+	//                                   a. write(GLOB)
+	//                                   b. MU.Lock()
+	//                                   c. COND = 1
+	//                              /--- d. MU.Unlock()
+	// 3. MU.LockWhen(COND==1) <---/
+	// 4. MU.Unlock()
+	// 5. write(GLOB)
+	int glob=0;
+	int cond=0;
+	Mutex mu;
+	void Waker() {
+		usleep(100000);//make sure the waiter blocks
+		glob=1;
 
-// 		mu.Lock();
-// 		cond=1;
-// 		mu.Unlock();
-// 	}
-// 	void Waiter() {
-// 		cond=0;
-// 		mu.LockWhen(Condition(&ArgIsOne,&cond));
-// 		mu.Unlock();
-// 		glob=2;
-// 	}
-// 	void Run() {
-// 		HANDLER Worker1=(HANDLER)Waker;
-// 		HANDLER Worker2=(HANDLER)Waiter;
-// 		PTHREAD_RUN(2);
-// 	}
-// 	REGISTER_TEST(Run,3);
-// }//namespace test3
+		mu.Lock();
+		cond=1;
+		mu.Unlock();
+	}
+	void Waiter() {
+		cond=0;
+		mu.LockWhen(Condition(&ArgIsOne,&cond));
+		mu.Unlock();
+		glob=2;
+	}
+	void Run() {
+		HANDLER Worker1=(HANDLER)Waker;
+		HANDLER Worker2=(HANDLER)Waiter;
+		PTHREAD_RUN(2);
+	}
+	REGISTER_TEST(Run,3);
+}//namespace test3
 
 // // test04: TN. Synchronization via PCQ
 // namespace test4 {
@@ -2372,40 +2372,40 @@ using namespace std;
 // 	REGISTER_TEST(Run,2);
 // }//namespace test120
 
-// test121: TN. DoubleCheckedLocking
-namespace test121 {
-	struct Foo {
-		uintptr_t padding1[16];
-		volatile uintptr_t a;
-		uintptr_t padding2[16];
-	};
+// // test121: TN. DoubleCheckedLocking
+// namespace test121 {
+// 	struct Foo {
+// 		uintptr_t padding1[16];
+// 		volatile uintptr_t a;
+// 		uintptr_t padding2[16];
+// 	};
 
-	Foo *foo;
+// 	Foo *foo;
 
-	void InitMe() {
-		if(!foo) {
-			pthread_mutex_lock(&m);
-			if(!foo)
-				foo=new Foo;
-			foo->a=42;
-			pthread_mutex_unlock(&m);
-		}
-	}
-	void UseMe() {
-		InitMe();
-		assert(foo);
-		if(foo->a!=42)
-			printf("foo->a = %d (should be 42)\n",(int)foo->a);
-	}
-	void Worker1() { UseMe(); }
-	void Worker2() { UseMe(); }
-	void Worker3() { UseMe(); }
-	void Run() {
-		PTHREAD_RUN(3);
-		delete foo;
-	}
-	REGISTER_TEST(Run,121);
-}//namespace test121
+// 	void InitMe() {
+// 		if(!foo) {
+// 			pthread_mutex_lock(&m);
+// 			if(!foo)
+// 				foo=new Foo;
+// 			foo->a=42;
+// 			pthread_mutex_unlock(&m);
+// 		}
+// 	}
+// 	void UseMe() {
+// 		InitMe();
+// 		assert(foo);
+// 		if(foo->a!=42)
+// 			printf("foo->a = %d (should be 42)\n",(int)foo->a);
+// 	}
+// 	void Worker1() { UseMe(); }
+// 	void Worker2() { UseMe(); }
+// 	void Worker3() { UseMe(); }
+// 	void Run() {
+// 		PTHREAD_RUN(3);
+// 		delete foo;
+// 	}
+// 	REGISTER_TEST(Run,121);
+// }//namespace test121
 
 // // test122: TN. DoubleCheckedLocking2
 // namespace test122 {

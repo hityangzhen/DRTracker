@@ -17,6 +17,8 @@ srcs += \
   race/multilock_hb.cc \
   race/simple_lock.cc \
   race/simplelock_plus.cc \
+  race/loop.cc \
+  race/cond_wait.cc \
   race/verifier.cpp \
   race/verifier_sl.cpp \
   race/adhoc_sync.cc \
@@ -30,6 +32,8 @@ pintools += \
 	race_profiler.so
 
 race_profiler_objs := \
+  race/cond_wait.o \
+  race/loop.o \
   race/verifier.o \
   race/verifier_ml.o \
   race/profiler.o \
@@ -56,6 +60,8 @@ race_objs := \
   race/verifier_sl.o \
   race/adhoc_sync.o \
   race/verifier_ml.o \
+  race/loop.o \
+  race/cond_wait.o \
   race/race.o \
   race/race.pb.o
   

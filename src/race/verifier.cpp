@@ -12,7 +12,7 @@ size_t Verifier::ss_deq_len=0;
 address_t Verifier::unit_size_=0;
 
 Verifier::Verifier():internal_lock_(NULL),verify_lock_(NULL),prace_db_(NULL),
-	filter_(NULL)
+	filter_(NULL),loop_db_(NULL),cond_wait_db_(NULL)
 {}
 
 Verifier::~Verifier() 
@@ -20,7 +20,8 @@ Verifier::~Verifier()
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
-
+	delete loop_db_;
+	delete cond_wait_db_;
 	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
@@ -37,7 +38,6 @@ Verifier::~Verifier()
 		if(iter->second)
 			delete iter->second;
 	}
-
 	//clear sync metas
 	for(MutexMeta::Table::iterator iter=mutex_meta_table_.begin();
 		iter!=mutex_meta_table_.end();iter++) {
@@ -64,19 +64,6 @@ Verifier::~Verifier()
 		if(iter->second)
 			ProcessFree(iter->second);
 	}
-	//clear loop info
-	for(LoopMap::iterator iter=loop_map_.begin();iter!=loop_map_.end();
-		iter++) {
-		std::set<Loop*> loop_set;
-		for(LoopTable::iterator iiter=iter->second->begin();
-			iiter!=iter->second->end();iiter++) {
-			loop_set.insert(iiter->second);
-		}
-		for(std::set<Loop*>::iterator iiter=loop_set.begin();
-			iiter!=loop_set.end();iiter++)
-			delete *iiter;
-		delete iter->second;
-	}
 }
 
 bool Verifier::Enabled()
@@ -91,6 +78,8 @@ void Verifier::Register()
 	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","0");
 	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
 		"0");
+	knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
+		" and wait region","0");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
@@ -109,13 +98,16 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	desc_.SetHookAtomicInst();
 	//max length of the snapshot vector
 	ss_deq_len=knob_->ValueInt("ss_deq_len");
-	//load spin reads in each loop
-	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0)
-		LoadSpinReads();
 	//ad-hoc
-	spin_inner_count_=0;
-	spin_rlt_wrthd_=0;
-	spin_rlt_wrinst_=NULL;
+	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
+		loop_db_=new LoopDB(race_db_);
+		loop_db_->LoadSpinReads(knob_->ValueStr("exiting_cond_lines").c_str());		
+	}
+	//cond_wait
+	if(knob_->ValueStr("cond_wait_lines").compare("0")!=0) {
+		cond_wait_db_=new CondWaitDB;
+		cond_wait_db_->LoadCondWait(knob_->ValueStr("cond_wait_lines").c_str());
+	}
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -172,8 +164,11 @@ void Verifier::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 INFO_FMT_PRINT("===========thread:[%lx] exit,postpone set size:[%ld]=============\n",
 	curr_thd_id,pp_thd_set_.size());
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,NULL);
-
+	//after the loop, current thread exit directly
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,NULL);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,NULL);
 	//clear current thread accessed metas
 	// if(thd_metas_map_.find(curr_thd_id)!=thd_metas_map_.end() && 
 	// 	thd_metas_map_[curr_thd_id]!=NULL)
@@ -196,7 +191,10 @@ void Verifier::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,thread_t child_thd_id)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	BlockThread(curr_thd_id);
 	//current thread is blocked
 	if(avail_thd_set_.empty()) 
@@ -271,16 +269,20 @@ void Verifier::BeforePthreadMutexLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
-	ProcessWriteReadSync(curr_thd_id,inst);
 	ProcessPreMutexLock(curr_thd_id,mutex_meta);
 }
 	
 void Verifier::AfterPthreadMutexLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	
 	ScopedLock lock(internal_lock_);
+	if(cond_wait_db_)
+		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
 	ProcessPostMutexLock(curr_thd_id,mutex_meta);
 }
@@ -289,7 +291,14 @@ void Verifier::BeforePthreadMutexUnlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	//remove the unactived lock writes meta
+	if(cond_wait_db_) {
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
+			addr);
+	}
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
 	//set the vector clock
 	MutexMeta *mutex_meta=GetMutexMeta(addr);
 	ProcessPreMutexUnlock(curr_thd_id,mutex_meta);
@@ -323,7 +332,10 @@ void Verifier::BeforePthreadRwlockRdlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
 	ProcessPreRwlockRdlock(curr_thd_id,rwlock_meta);
 }
@@ -340,7 +352,10 @@ void Verifier::BeforePthreadRwlockWrlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
 	ProcessPreRwlockWrlock(curr_thd_id,rwlock_meta);
 }
@@ -349,6 +364,8 @@ void Verifier::AfterPthreadRwlockWrlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
+	if(cond_wait_db_)
+		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
 	ProcessPostRwlockWrlock(curr_thd_id,rwlock_meta);
 }
@@ -357,7 +374,14 @@ void Verifier::BeforePthreadRwlockUnlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	//remove the unactived lock writes meta
+	if(cond_wait_db_) {
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
+			addr);
+	}
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
 	RwlockMeta *rwlock_meta=GetRwlockMeta(addr);
 	ProcessPreRwlockUnlock(curr_thd_id,rwlock_meta);
 }
@@ -412,7 +436,10 @@ void Verifier::BeforePthreadBarrierWait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
 	BlockThread(curr_thd_id);
 	//set the vector clock
@@ -444,8 +471,12 @@ void Verifier::BeforePthreadCondSignal(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
+	//active the lock signal meta
+	if(cond_wait_db_)
+		cond_wait_db_->ActiveLockSignalMeta(curr_thd_id);
 	//we should handle the wake up
-	WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
 	CondMeta *cond_meta=GetCondMeta(addr);
 	ProcessSignal(curr_thd_id,cond_meta);
 }
@@ -454,8 +485,12 @@ void Verifier::BeforePthreadCondBroadcast(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst, address_t addr)
 {
 	ScopedLock lock(internal_lock_);
+	//active the lock signal meta
+	if(cond_wait_db_)
+		cond_wait_db_->ActiveLockSignalMeta(curr_thd_id);
 	//we should handle the wake up
-	WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
 	CondMeta *cond_meta=GetCondMeta(addr);
 	ProcessSignal(curr_thd_id,cond_meta);
 }
@@ -465,7 +500,11 @@ void Verifier::BeforePthreadCondWait(thread_t curr_thd_id,
     address_t mutex_addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	//remove the cond_wait meta
+	if(cond_wait_db_)
+		cond_wait_db_->RemoveCondWaitMeta(curr_thd_id);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
 	//handle unlock
 	MutexMeta *mutex_meta=GetMutexMeta(mutex_addr);
 	ProcessPreMutexUnlock(curr_thd_id,mutex_meta);
@@ -538,7 +577,10 @@ void Verifier::BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 {
 	ScopedLock lock(internal_lock_);
 	//we should handle the wake up
-	WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	SemMeta *sem_meta=GetSemMeta(addr);
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
 	sem_meta->vc.Join(curr_vc);
@@ -552,7 +594,10 @@ void Verifier::BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
   	Inst *inst,address_t addr)
 {
 	ScopedLock lock(internal_lock_);
-	ProcessWriteReadSync(curr_thd_id,inst);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
 	SemMeta *sem_meta=GetSemMeta(addr);
 	BlockThread(curr_thd_id);
 	//
@@ -601,26 +646,45 @@ void Verifier::ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_
 void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 	size_t size,RaceEventType type)
 {
-	//after waiting 5 insts, current thread is still in loop,
-	//should wake up the write thread.
-	WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	//process write->read sync
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
 
 INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[%lx]=======\n",
 	curr_thd_id,inst->ToString().c_str(),addr);
+
+	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
+	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
+
 	//get the potential statement
 	std::string file_name=inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
+
+	if(cond_wait_db_) {
+		//handle the previous signal/broadcast->cond_wait sync firstly
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		//do the signal/broadcast->cond_wait sync analysis
+		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+			//process cond wait read
+			if(type==RACE_EVENT_READ) {
+				if(ProcessCondWaitRead(curr_thd_id,inst,iaddr,file_name,line))
+					break;
+			//process signal write
+			} else if(type==RACE_EVENT_WRITE) {
+				ProcessLockSignalWrite(curr_thd_id,iaddr);
+			}
+		}
+	}
+
 	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
+	//typically lock signal write is not raced with cond_wait read
 	if(pstmt==NULL) {
 		VerifyUnlock();
 		return ;
 	}
 	// DEBUG_ASSERT(pstmt);
-
-	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
-	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 
 	//first pstmt set of the pstmt pairs
 	PStmtSet first_pstmts;
@@ -644,7 +708,8 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			Meta *meta=GetMeta(iaddr);
 			DEBUG_ASSERT(meta);
-			timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
+			timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->
+				GetClock(curr_thd_id);
 			pstmt_metas_map_[pstmt]->insert(meta);
 			// thd_metas_map_[curr_thd_id]->insert(meta);
 			thd_ppmetas_map_[curr_thd_id]->insert(meta);
@@ -652,15 +717,14 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 			//recent snapshots means that the access is redudant 
 			if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 				continue;
-	
 			//add snapshot
 			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
 			flag=false;
 		}
 		if(!flag) {//postpone current thread
 			//if the spin thread
-			if(SpinRead(inst,type)) {
-				spinthd_inst_map_[curr_thd_id]=inst;
+			if(loop_db_->SpinRead(file_name,line,type)) {
+				loop_db_->SetSpinReadThread(curr_thd_id,inst);
 			}
 			PostponeThread(curr_thd_id);
 		}
@@ -672,20 +736,17 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 		}
 	} else {
 		//accumulate postponed threads
-		PostponeThreadSet pp_thds;
-		for(PStmtSet::iterator iter=first_pstmts.begin();iter!=first_pstmts.end();
-			iter++) {
+		std::map<thread_t,bool> pp_thd_map;
+		// PostponeThreadSet pp_thds;
+		for(PStmtSet::iterator iter=first_pstmts.begin();
+			iter!=first_pstmts.end();iter++) {
 			PStmt *first_pstmt=*iter;
 			RacedMeta(first_pstmt,start_addr,end_addr,pstmt,inst,curr_thd_id,
-				type,pp_thds);
+				type,pp_thd_map);
 		}
 
-		if(!pp_thds.empty()) {
-			// //clear current thread accessed metas and pstmt corresponding metas
-			// MetaSet *metas=thd_metas_map_[curr_thd_id];
-			// DEBUG_ASSERT(metas);
-			// ClearPStmtCorrespondingMetas(pstmt,metas);
-			HandleRace(&pp_thds,curr_thd_id);
+		if(!pp_thd_map.empty()) {
+			HandleRace(pp_thd_map,curr_thd_id);
 		}else
 			HandleNoRace(curr_thd_id);
 	}
@@ -963,58 +1024,77 @@ INFO_PRINT("=================handle no race===================\n");
 	PostponeThread(curr_thd_id);
 }
 //
-void Verifier::HandleRace(PostponeThreadSet *pp_thds,thread_t curr_thd_id)
+void Verifier::HandleRace(std::map<thread_t,bool> &pp_thd_map,
+	thread_t curr_thd_id)
 {
 INFO_PRINT("=================handle race===================\n");
-// 	//clear raced info whenever
-// 	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
-// 		iter++) {
-// INFO_FMT_PRINT("+++++++++++++++++++pp_thd_id:[%lx]+++++++++++++++++\n",*iter);
-// 		//clear raced metas
-// 		// delete thd_metas_map_[*iter];
-// 		// thd_metas_map_[*iter]=NULL;
-// 	}
 
-	// delete thd_metas_map_[curr_thd_id];
-	// thd_metas_map_[curr_thd_id]=NULL;
-	
 	//if at least one spin thread in postponed threads
-	SpinThreadSet spin_thds;
-	for(PostponeThreadSet::iterator iter=pp_thds->begin();
-		iter!=pp_thds->end();iter++) {
-		if(spinthd_inst_map_.find(*iter)!=spinthd_inst_map_.end()) {
-			spin_thds.insert(*iter);
+	LoopDB::SpinThreadSet spin_thds;
+	PostponeThreadSet pp_thds;
+	//keep up threads
+	PostponeThreadSet keep_up_thds;
+
+	for(std::map<thread_t,bool>::iterator iter=pp_thd_map.begin();
+		iter!=pp_thd_map.end();iter++) {
+		//pp_thd_map may exist current thread 
+		if(iter->first!=curr_thd_id) {
+			pp_thds.insert(iter->first);
+			if(iter->second==false)
+				keep_up_thds.insert(iter->first);
+			if(loop_db_->SpinReadThread(iter->first))
+				spin_thds.insert(iter->first);
 		}
 	}
 	if(!spin_thds.empty()) {
-		spin_rlt_wrthd_=curr_thd_id;
-		WakeUpPostponeThreadSet(&spin_thds);
+		for(LoopDB::SpinThreadSet::iterator iter=spin_thds.begin();
+			iter!=spin_thds.end();iter++)
+			loop_db_->SetSpinRelevantWriteThread(*iter,curr_thd_id);
+		WakeUpPostponeThreadSet(pp_thds);
 		PostponeThread(curr_thd_id);
 		return ;
 	}
-	//current thread has been spin thread
-	if(spinthd_inst_map_.find(curr_thd_id)!=spinthd_inst_map_.end()) {
-		DEBUG_ASSERT(pp_thds->size()<=1);
+	//current thread is the spinning read thread
+	if(loop_db_->SpinReadThread(curr_thd_id)) {
+		DEBUG_ASSERT(pp_thds.size()<=1);
 		//postponed thread exist
-		if(!pp_thds->empty()) {
-			spin_rlt_wrthd_=*pp_thds->begin();
+		if(!pp_thds.empty()) {
+			loop_db_->SetSpinRelevantWriteThread(curr_thd_id,
+				*pp_thds.begin());
 			//we only continue to execute,do not need to wake up self
-			VerifyUnlock();
-			return ;
+			// VerifyUnlock();
+			// return ;
+			return KeepupThread(curr_thd_id);
 		}
 	}
 
 	//wake up postpone thread set,postpone current thread
 	if(!RandomBool()) {
 		WakeUpPostponeThreadSet(pp_thds);
-		PostponeThread(curr_thd_id);
+		//the accessed pstmt of current thread has been verified fully 
+		if(pp_thd_map.find(curr_thd_id)!=pp_thd_map.end())
+			return KeepupThread(curr_thd_id);
+		else
+			PostponeThread(curr_thd_id);
 	}
 	//must free the lock if current thread execute continuously
 	else {
 		//bring the postponed thread's metas into history metas
-		ClearPostponedThreadMetas(curr_thd_id);
-		VerifyUnlock();		
+		// ClearPostponedThreadMetas(curr_thd_id);
+		// VerifyUnlock();
+		//
+		WakeUpPostponeThreadSet(keep_up_thds);
+		KeepupThread(curr_thd_id);
 	}
+}
+
+/**
+ * do not postpone the thread
+ */
+inline void Verifier::KeepupThread(thread_t curr_thd_id)
+{
+	ClearPostponedThreadMetas(curr_thd_id);
+	VerifyUnlock();
 }
 
 /**
@@ -1023,13 +1103,10 @@ INFO_PRINT("=================handle race===================\n");
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
 // INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
-
-	//correspond to before_mutex_lock
-	InternalLock();
 //INFO_FMT_PRINT("=================avail_thd_set_ size:[%ld]===================\n",avail_thd_set_.size());
+	InternalLock();
 	//current thread is the only available thread, others may be blocked by some sync
 	//operations, we should not postpone it
-
 	if(avail_thd_set_.size()==1 && pp_thd_set_.empty()) {
 		//bring the postponed thread's metas into history metas
 		ClearPostponedThreadMetas(curr_thd_id);
@@ -1082,11 +1159,10 @@ inline void Verifier::WakeUpPostponeThread(thread_t thd_id)
 	// avail_thd_set_.insert(thd_id);
 }
 
-void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds)
+void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet &pp_thds)
 {
 //INFO_FMT_PRINT("=================wakeup pp_thds size:[%ld]===================\n",pp_thds->size());
-	DEBUG_ASSERT(pp_thds);
-	for(PostponeThreadSet::iterator iter=pp_thds->begin();iter!=pp_thds->end();
+	for(PostponeThreadSet::iterator iter=pp_thds.begin();iter!=pp_thds.end();
 		iter++) {
 		// if(thd_smp_map_[*iter]->IsWaiting())
 		// 	thd_smp_map_[*iter]->Post();
@@ -1099,12 +1175,9 @@ void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds)
 
 inline
 void Verifier::ClearPostponedThreadMetas(thread_t curr_thd_id) {
+	if(thd_ppmetas_map_.find(curr_thd_id)==thd_ppmetas_map_.end())
+		return ;
 	MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
-	DEBUG_ASSERT(thd_ppmetas_map_[curr_thd_id]);
-	// for(MetaSet::iterator iter=thd_ppmetas_map_[curr_thd_id]->begin();
-	// 	iter!=thd_ppmetas_map_[curr_thd_id]->end();iter++) {
-	// 	thd_metas_map_[curr_thd_id]->insert(*iter);
-	// }
 	std::copy(thd_ppmetas_map_[curr_thd_id]->begin(),
 		thd_ppmetas_map_[curr_thd_id]->end(),
 		inserter(*thd_metas_map_[curr_thd_id],
@@ -1132,21 +1205,21 @@ void Verifier::ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas)
 }
 
 /**
- * 
+ * pp_thds contains result of the raced postponed threads
  */
-void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_addr,
-	PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,RaceEventType type,
-	PostponeThreadSet &pp_thds)
+void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
+	address_t end_addr,PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,
+	RaceEventType type,std::map<thread_t,bool> &pp_thd_map)
 {
-	if(pstmt_metas_map_.find(first_pstmt)==pstmt_metas_map_.end() || 
-		pstmt_metas_map_[first_pstmt]==NULL)
-		return ;
+	// if(pstmt_metas_map_.find(first_pstmt)==pstmt_metas_map_.end() || 
+	// 	pstmt_metas_map_[first_pstmt]==NULL)
+	// 	return ;
 	MetaSet *first_metas=pstmt_metas_map_[first_pstmt];
 	MAP_KEY_NOTFOUND_NEW(pstmt_metas_map_,second_pstmt,MetaSet);
 	//MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
 	MAP_KEY_NOTFOUND_NEW(thd_ppmetas_map_,curr_thd_id,MetaSet);
 	MetaSet *second_metas=pstmt_metas_map_[second_pstmt];
-
+	PostponeThreadSet tmp_pp_thds;
 	bool flag=false;
  	timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
 
@@ -1168,20 +1241,21 @@ INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n"
 					iter->second->find(meta)!=iter->second->end()) {
 					//traverse current thread's last snapshot
 					MetaSnapshot *meta_ss=meta->LastestMetaSnapshot(iter->first);
-					//filter raced inst pair
-					if(meta->RacedInstPair(meta_ss->inst,inst))
+
+					//filter irrelevant postponed thread or raced inst pair
+					if(meta_ss->pstmt!=first_pstmt ||
+						meta->RacedInstPair(meta_ss->inst,inst))
 						continue ;
 					if(type==RACE_EVENT_WRITE) {
 						flag=true;
-						pp_thds.insert(iter->first);
+						tmp_pp_thds.insert(iter->first);
 						if(meta_ss->type==RACE_EVENT_WRITE)
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
 						else {
 							//set the relevant write inst
-							if(spinthd_inst_map_.find(iter->first)!=
-								spinthd_inst_map_.end())
-								spin_rlt_wrinst_=inst;
+							if(loop_db_->SpinReadThread(iter->first))
+								loop_db_->SetSpinRelevantWriteInst(iter->first,inst);
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
 						}
@@ -1192,17 +1266,17 @@ INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n"
 					}
 					else if(type==RACE_EVENT_READ) {
 						//spin read
-						if(SpinRead(inst,type))
-							spinthd_inst_map_[curr_thd_id]=inst;							
+						if(loop_db_->SpinRead(inst,type))
+							loop_db_->SetSpinReadThread(curr_thd_id,inst);							
 
 						if(meta_ss->type==RACE_EVENT_WRITE) {
 							//set the relevant write inst
-							if(spinthd_inst_map_.find(curr_thd_id)!=
-								spinthd_inst_map_.end())
-								spin_rlt_wrinst_=meta_ss->inst;
+							if(loop_db_->SpinReadThread(curr_thd_id))
+								loop_db_->SetSpinRelevantWriteInst(curr_thd_id,
+									meta_ss->inst);
 
 							flag=true;
-							pp_thds.insert(iter->first);
+							tmp_pp_thds.insert(iter->first);
 							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
 							//add race to race db
@@ -1268,7 +1342,6 @@ meta->addr,inst->ToString().c_str());
 		second_metas->insert(meta);
 		// thd_metas_map_[curr_thd_id]->insert(meta);
 		thd_ppmetas_map_[curr_thd_id]->insert(meta);
-
 	}
 	//verify postponed raced meta
 	if(flag) {
@@ -1276,10 +1349,24 @@ meta->addr,inst->ToString().c_str());
 		if(prace_db_->HasFullyVerified(first_pstmt)) {
 			delete pstmt_metas_map_[first_pstmt];
 			pstmt_metas_map_.erase(first_pstmt);
+			//postponed threads of the first pstmt need not to be postponed
+			for(PostponeThreadSet::iterator iter=tmp_pp_thds.begin();
+				iter!=tmp_pp_thds.end();iter++) {
+				pp_thd_map[*iter]=false;
+			}
+		//first pstmt has not been fully verified
+		} else {
+			for(PostponeThreadSet::iterator iter=tmp_pp_thds.begin();
+				iter!=tmp_pp_thds.end();iter++) {
+				pp_thd_map[*iter]=true;
+			}
 		}
+
 		if(prace_db_->HasFullyVerified(second_pstmt)) {
 			delete pstmt_metas_map_[second_pstmt];
 			pstmt_metas_map_.erase(second_pstmt);
+			//second pstmt has been fully verified
+			pp_thd_map[curr_thd_id]=false;
 		}
 	}
 }
@@ -1314,106 +1401,72 @@ void Verifier::PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,
 	DEBUG_FMT_PRINT_SAFE("%s%s\n",SEPARATOR,SEPARATOR);
 }
 
-void Verifier::LoadSpinReads()
-{
-	const char *delimit=" ",*fn=NULL,*sl=NULL,*el=NULL,*ecl=NULL;
-	char buffer[200];
-	std::fstream in(knob_->ValueStr("exiting_cond_lines").c_str(),
-		std::ios::in);
-	if(!in)
-		return ;
-	while(!in.eof()) {
-		in.getline(buffer,200,'\n');
-		fn=strtok(buffer,delimit);
-		sl=strtok(NULL,delimit);
-		el=strtok(NULL,delimit);
-		DEBUG_ASSERT(fn && sl && el);
-		std::string fn_str(fn);
-		if(loop_map_.find(fn_str)==loop_map_.end())
-			loop_map_[fn_str]=new LoopTable;
-		int sl_int=atoi(sl),el_int=atoi(el);
-		Loop *loop=new Loop(sl_int,el_int);
-		//traverse all exiting condition line
-		while((ecl=strtok(NULL,delimit))) {
-			//add the global ecl index
-			exiting_cond_line_set_.insert(fn_str+ecl);
-			//add the mapping of ecl to loop
-			loop_map_[fn_str]->insert(std::make_pair(atoi(ecl),loop));
-		}
-	}
-	in.close();
-}
-
-bool Verifier::SpinRead(Inst *inst,RaceEventType type)
-{ 
-	if(type==RACE_EVENT_WRITE)
-		return false;
-	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
-	int line=inst->GetLine();
-	std::stringstream ss; 
-	ss<<file_name<<line;
-	return exiting_cond_line_set_.find(ss.str())!=
-		exiting_cond_line_set_.end();
-}
-
+/**
+ * if curr_inst is NULL, which indicates not to check if in the loop scope
+ */
+inline
 void Verifier::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst)
 {
-	if(spinthd_inst_map_.find(curr_thd_id)==spinthd_inst_map_.end())
-		return ;
-INFO_FMT_PRINT("==================process write read sync:[%lx]================\n",curr_thd_id);
-	Inst *latest_rdinst=spinthd_inst_map_[curr_thd_id];
-	std::string file_name=latest_rdinst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
-	//lastest loop
-	Loop *loop=(*loop_map_[file_name])[latest_rdinst->GetLine()];
-	DEBUG_ASSERT(loop);
-	//if current inst still in loop region
-	if(spin_rlt_wrthd_!=0 && (!curr_inst ||
-		!loop->InLoop(curr_inst->GetLine()))) {
-		spinthd_inst_map_.erase(curr_thd_id);
-		spin_inner_count_=0;
-		//construct write read sync
-		VectorClock *wrthd_vc=thd_vc_map_[spin_rlt_wrthd_];
-		thd_vc_map_[curr_thd_id]->Join(wrthd_vc);
-		wrthd_vc->Increment(spin_rlt_wrthd_);
-		if(curr_inst)
-INFO_FMT_PRINT("++++++++++++++++write->read sync,curr inst:[%s]++++++++++++++++\n",curr_inst->ToString().c_str());
-		//set all exiting condition relative race to be BENIGN
-		std::map<Race*,RaceEvent*> result;
-		race_db_->FindRacesByOneSide(spin_rlt_wrthd_,spin_rlt_wrinst_,
-			RACE_EVENT_WRITE,result,false);
-		for(std::map<Race*,RaceEvent*>::iterator iter=result.begin();
-			iter!=result.end();iter++) {
-			RaceEvent *race_event=iter->second;
-			//find the corresponding spin read event
-			if(race_event->type()==RACE_EVENT_READ && 
-				loop->InLoop(race_event->inst()->GetLine())) {
-INFO_FMT_PRINT("++++++++++++++++benign race, read inst:[%s]++++++++++++++++\n",race_event->inst()->ToString().c_str());
-				iter->first->set_status(Race::BENIGN);
-			}
-		}
-		//clear relevant write info
-		spin_rlt_wrthd_=0;
-		spin_rlt_wrinst_=NULL;
-	} else {
-		//after waiting 4 insts to ensure is still in loop
-		++spin_inner_count_;
-	}
-	INFO_PRINT("==================process write read sync end================\n");
+	//process spinning read loop
+	thread_t spin_rlt_wrthd=loop_db_->
+		GetSpinRelevantWriteThread(curr_thd_id);
+	loop_db_->ProcessWriteReadSync(curr_thd_id,curr_inst,
+		thd_vc_map_[spin_rlt_wrthd],thd_vc_map_[curr_thd_id]);
 }
 
+inline
 void Verifier::WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,
 	Inst *curr_inst)
 {
 	ProcessWriteReadSync(curr_thd_id,curr_inst);
-	if(spin_inner_count_>=6) {
-		spin_inner_count_=0;
-		//
-		if(spin_rlt_wrthd_!=0)
-			WakeUpPostponeThread(spin_rlt_wrthd_);
+	//process spinning read loop. after waiting 5 insts, current 
+	//thread is still in loop, should wake up the write thread.
+	if(loop_db_->GetSpinInnerCount(curr_thd_id)>=SPIN_READ_COUNT) {
+		loop_db_->ResetSpinInnerCount(curr_thd_id);
+		//if the write-spinning read race existing
+		//write must be postponed
+		thread_t spin_rlt_wrthd=loop_db_->
+			GetSpinRelevantWriteThread(curr_thd_id);
+		if(spin_rlt_wrthd!=0 && 
+			pp_thd_set_.find(spin_rlt_wrthd)!=pp_thd_set_.end())
+			WakeUpPostponeThread(spin_rlt_wrthd);
 	}
 }
+
+void Verifier::ProcessLockSignalWrite(thread_t curr_thd_id,
+	address_t addr)
+{
+	//current thread should be protected by at least one lock
+	address_t lk_addr=0;
+	if((lk_addr=cond_wait_db_->GetLastestLock(curr_thd_id))==0)
+		return ;
+	//add the lock write meta
+	cond_wait_db_->AddLockSignalWriteMeta(curr_thd_id,
+		*thd_vc_map_[curr_thd_id],addr,lk_addr);
+}
+
+bool Verifier::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+	address_t addr)
+{
+	std::string file_name=curr_inst->GetFileName();
+	size_t found=file_name.find_last_of("/");
+	file_name=file_name.substr(found+1);
+	int line=curr_inst->GetLine();
+	return ProcessCondWaitRead(curr_thd_id,curr_inst,addr,file_name,line);
+}
+
+bool Verifier::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+	address_t addr,std::string &file_name,int line)
+{
+	return cond_wait_db_->ProcessCondWaitRead(curr_thd_id,curr_inst,
+		*thd_vc_map_[curr_thd_id],addr,file_name,line);
+}
+
+void Verifier::ProcessSignalCondWaitSync(thread_t curr_thd_id,
+	Inst *curr_inst)
+{
+	cond_wait_db_->ProcessSignalCondWaitSync(curr_thd_id,curr_inst,
+		*thd_vc_map_[curr_thd_id]);
+}
+
 }// namespace race

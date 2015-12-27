@@ -11,7 +11,7 @@
 #include "race/race.h"
 #include "core/lock_set.h"
 #include "race/adhoc_sync.h"
-#include "core/loop.h"
+#include "race/loop.h"
 
 namespace race {
 

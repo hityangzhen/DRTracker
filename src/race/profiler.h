@@ -3,7 +3,6 @@
 
 #include "core/basictypes.h"
 #include "core/execution_control.hpp"
-#include "core/loop.h"
 #include "race/race.h"
 #include "race/djit.h"
 #include "race/eraser.h"

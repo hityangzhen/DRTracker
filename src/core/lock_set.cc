@@ -17,10 +17,9 @@ bool LockSet::Exist(address_t addr,lock_version_t version)
 	return false;
 }
 
-
 bool LockSet::Match(LockSet *ls)
 {
-	if(set_.size()!=ls->set_.size())
+	if(!ls || set_.size()!=ls->set_.size())
 		return false;
 	for(LockVersionMap::iterator it=set_.begin();it!=set_.end();++it) {
 		LockVersionMap::iterator mit=ls->set_.find(it->first);

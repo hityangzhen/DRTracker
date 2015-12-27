@@ -26,7 +26,6 @@ void ExecutionControl::PreSetup()
 	knob_->RegisterStr("sinfo_in","the input static info database path","sinfo.db");
 	knob_->RegisterStr("sinfo_out","the output static info database path","sinfo.db");
 
-	//result of the static race detector
 	knob_->RegisterStr("static_profile","the potential race statement pairs generated"
 		" by static race detector","0");
 	knob_->RegisterStr("instrumented_lines","the instrumented lines traversed from"
@@ -80,6 +79,7 @@ void ExecutionControl::PostSetup()
 			LOAD_LINES_TO_SET(filename,instrumented_lines_);
 		}		
 	}
+
 	//Load static info.
 	sinfo_=new StaticInfo(CreateMutex());
 	sinfo_->Load(knob_->ValueStr("sinfo_in"));

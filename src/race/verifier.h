@@ -11,8 +11,11 @@
 #include "race/race.h"
 #include "core/pin_sync.hpp"
 #include "core/vector_clock.h"
-#include "core/loop.h"
-#include "core/log.h"
+#include "race/loop.h"
+#include "race/cond_wait.h"
+
+//default dynamic data race detection engine is FastTrack
+
 namespace race 
 {
 
@@ -23,8 +26,6 @@ namespace race
 #define MAP_KEY_NOTFOUND_NEW(map,key,value_type) \
 	if((map).find(key)==(map).end() || (map)[key]==NULL) \
 		(map)[key]=new value_type
-
-#define THD_METAS_LEN 60
 
 class Verifier:public Analyzer {
 protected:
@@ -192,6 +193,7 @@ protected:
 		VectorClock vc;
 		int8 count; //should consider negative
 	};
+
 public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
@@ -202,11 +204,6 @@ public:
 	typedef std::map<PStmt *,MetaSet *> PStmtMetasMap;
 	typedef std::set<PStmt *> PStmtSet;
 	typedef std::tr1::unordered_map<thread_t,VectorClock *> ThreadVectorClockMap;
-	typedef std::tr1::unordered_map<int,Loop *> LoopTable;
-	typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
-	typedef std::tr1::unordered_set<std::string> ExitingCondLineSet;
-	typedef std::set<thread_t> SpinThreadSet;
-	typedef std::map<thread_t,Inst *> ThreadInstMap;
 
 	Verifier();
 	virtual ~Verifier();
@@ -395,7 +392,7 @@ protected:
 		size_t size,RaceEventType type);
 	void RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_addr,
 		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,RaceEventType type,
-		PostponeThreadSet &pp_thds);
+		std::map<thread_t,bool> &pp_thd_map);
 	//wrapper function
 	virtual void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s) {
@@ -415,10 +412,11 @@ protected:
 		}
 		return NONE;
 	}
-	void WakeUpPostponeThreadSet(PostponeThreadSet *pp_thds);
+	void WakeUpPostponeThreadSet(PostponeThreadSet &pp_thds);
 	void WakeUpPostponeThread(thread_t thd_id);
 	void PostponeThread(thread_t curr_thd_id);
-	void HandleRace(PostponeThreadSet *pp_thds,thread_t curr_thd_id);
+	void KeepupThread(thread_t curr_thd_id);
+	void HandleRace(std::map<thread_t,bool> &pp_thd_map,thread_t curr_thd_id);
 	void HandleNoRace(thread_t curr_thd_id);
 
 	void ClearPostponedThreadMetas(thread_t curr_thd_id);
@@ -433,12 +431,16 @@ protected:
 		blk_thd_set_.erase(curr_thd_id);
 		avail_thd_set_.insert(curr_thd_id);
 	}
-	//ad-hoc
-	void LoadSpinReads();
-	bool SpinRead(Inst *inst,RaceEventType type);
+	//ad-hoc wrapper functions
 	void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
-	void WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,
-		Inst *curr_inst);
+	void WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
+	//cond_wait wrapper functions
+	void ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr);
+	bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+		address_t addr);
+	bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+		address_t addr,std::string &file_name,int line);
+	void ProcessSignalCondWaitSync(thread_t curr_thd_id,Inst *curr_inst);
 
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
@@ -473,16 +475,10 @@ protected:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
-
-	//all eixting conds of loops
-	LoopMap loop_map_;
-	ExitingCondLineSet exiting_cond_line_set_;
-	SpinThreadSet spin_thd_set_;
-	//spin thread and lastest exiting condition read mapping 
-	ThreadInstMap spinthd_inst_map_;
-	thread_t spin_rlt_wrthd_;
-	Inst *spin_rlt_wrinst_;
-	uint32 spin_inner_count_;
+	//loop info
+	LoopDB *loop_db_;
+	//cond_wait info
+	CondWaitDB *cond_wait_db_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };

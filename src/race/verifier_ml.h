@@ -1,7 +1,8 @@
 #ifndef __VERIFIER_ML_H
 #define __VERIFIER_ML_H
 
-//Use the multilock-hb method to improve the precision
+//Use the multilock-hb dynamic data race detection engine
+//to improve the precision.
 
 #include "race/verifier.h"
 #include "core/lock_set.h"

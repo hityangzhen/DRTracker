@@ -408,6 +408,7 @@ void RaceReport::Save(const std::string &report_name,RaceDB *race_db)
 	
 	std::set<std::string> race_rp_set;
 	std::stringstream ss;
+	uint32 i=0;
 	for(Race::Vec::iterator it=race_db->race_vec_.begin();
 		it!=race_db->race_vec_.end();it++) {
 		if((*it)->status_!=Race::HARMFUL)
@@ -421,11 +422,12 @@ void RaceReport::Save(const std::string &report_name,RaceDB *race_db)
 			race_rp_set.insert(tmp.str());
 			ss<<tmp.str();
 		}
+		i++;
 	}
 	//save to file
 	std::fstream out(report_name.c_str(),std::ios::out | std::ios::app);
 	out<<ss.str()<<std::endl;
-	out<<"races: "<<race_db->race_vec_.size();
+	out<<"races: "<<i<<std::endl;
 	out.close();
 }
 
