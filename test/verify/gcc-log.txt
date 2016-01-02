@@ -1,0 +1,3 @@
+duppy -g -c lf_queue.c -pthread
+duppy -g -c unittest.c -pthread
+duppy -g -o unittest unittest.o lf_queue.o -pthread

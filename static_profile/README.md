@@ -8,18 +8,22 @@
 
 ####static\_profile\_\*.out files contain potential racing stmt pair info.
 * **static\_profile\_\*.out (each line)**
+
 > filename1 | potential racing stmt1 line | filename2 | potential racing stmt2 line
 
 ####loop\_range\_\*.out files contain each loop's start line and end line info.
 * **loop\_range\_\*.out (each line)**
+
 > filename | loop start line | loop end line
 
 ####exiting\_cond\_lines\_\*.out files contain each loop's exiting condtion lines,which are spin read.
 * **exiting\_cond\_lines\_\*.out (each line)**
+
 > filename | procedure start line | procedure end line | loop start line | loop end line | first exiting condition line | second exiting condition line | ...
 
 ####cond\_wait\_lines\_\*.out files contain loop scope info and each loop's exiting condition line before the pthread_cond_wait sync operation info.
 * **cond\_wait\_lines\_\*.out (each line)**
+
 > filename | procedure start line | procedure end line | loop start line | loop end line | first exiting condition line | second exiting condition line | ...
 
 ###locksmith\_out\_parse.py profile the result of the [LOCKSMITH](http://www.cs.umd.edu/projects/PL/locksmith/) static analysis
