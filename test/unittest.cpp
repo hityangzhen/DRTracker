@@ -86,7 +86,7 @@ namespace test3 {
 	int cond=0;
 	Mutex mu;
 	void Waker() {
-		usleep(100000);//make sure the waiter blocks
+		// usleep(100000);//make sure the waiter blocks
 		glob=1;
 
 		mu.Lock();
@@ -94,7 +94,7 @@ namespace test3 {
 		mu.Unlock();
 	}
 	void Waiter() {
-		cond=0;
+		// cond=0;
 		mu.LockWhen(Condition(&ArgIsOne,&cond));
 		mu.Unlock();
 		glob=2;
@@ -365,12 +365,12 @@ namespace test3 {
 // 	//use semephore to simulate consumer-producer
 
 // 	void Putter(void ) {
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		PC_SEM_PRODUCE(1);
 // 	}
 
 // 	void Putter1(void ) {
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		PC_SEM_PRODUCE(2);
 // 	}
 
@@ -394,11 +394,11 @@ namespace test3 {
 // 	int glob=0;
 
 // 	void Worker1(void ) {
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_barrier_wait(&b);
 // 	}
 // 	void Worker2(void ) {
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_barrier_wait(&b);
 // 		glob=2;
 // 	}
@@ -432,7 +432,7 @@ namespace test3 {
 // 		for(int i=0;i<5;i++) {
 // 			while(true) {
 // 				if(pthread_rwlock_tryrdlock(&rwlock)==0) {
-// 					if(glob!=-777) { }
+// 					assert(glob!=-777);
 // 					pthread_rwlock_unlock(&rwlock);
 // 					break;
 // 				}
@@ -453,7 +453,7 @@ namespace test3 {
 // 	void Worker_ReaderLock(void ) {
 // 		for(int i=0;i<5;i++) {
 // 			pthread_rwlock_rdlock(&rwlock);
-// 			if(glob!=-777) { }
+// 			assert(glob!=-777);
 // 			pthread_rwlock_unlock(&rwlock);
 // 			usleep(1000);
 // 		}		
@@ -492,7 +492,7 @@ namespace test3 {
 // 		pthread_mutex_unlock(&m);
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -500,7 +500,7 @@ namespace test3 {
 // 		PC_SEM_CONSUME(1);
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 	}
 
 // 	void Run() {
@@ -530,7 +530,7 @@ namespace test3 {
 // 			PC_SEM_PRODUCE(2);
 // 		}
 // 		pthread_mutex_lock(&m);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m);
 // 	}
 // 	void Putter1(void ) {
@@ -543,7 +543,7 @@ namespace test3 {
 // 		PC_SEM_CONSUME(1);
 // 		PC_SEM_CONSUME(2);
 // 		usleep(100000);
-// 		if(glob==2) { }
+// 		assert(glob==2);
 // 	}
 
 // 	void Run() {
@@ -589,7 +589,7 @@ namespace test3 {
 // 	void Reader(void ) {
 // 		usleep(480000);
 // 		pthread_mutex_lock(&m);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -678,7 +678,7 @@ namespace test3 {
 // 	void Reader(void ) {
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -724,7 +724,7 @@ namespace test3 {
 // 		}
 // 		pthread_mutex_lock(&m);
 // 		pthread_mutex_lock(&m1);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m1);
 // 		pthread_mutex_unlock(&m);
 // 	}
@@ -788,7 +788,7 @@ namespace test3 {
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
 // 		pthread_mutex_lock(&m1);
-// 		if(glob!=-777) { }
+// 		assert(glob!=-777);
 // 		pthread_mutex_unlock(&m1);
 // 		pthread_mutex_unlock(&m);
 // 	}
@@ -854,13 +854,13 @@ namespace test3 {
 // 	void Putter(void ) {
 // 		glob=1;
 // 		PC_SEM_PRODUCE(1);
-// 		if(glob==1) { }
+// 		assert(glob==1);
 // 	}
 
 // 	void Getter(void ) {
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
-// 		if(glob==1) { }
+// 		assert(glob==1);
 // 	}
 
 // 	void Run() {
@@ -887,7 +887,7 @@ namespace test3 {
 // 	int glob=0;
 
 // 	void Putter(void ) {
-// 		if(glob==0) { }
+// 		assert(glob==0);
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
 // 		glob=1;
@@ -925,7 +925,7 @@ namespace test3 {
 // 	int glob=0;
 
 // 	void Putter(void ) {
-// 		if(glob==0) { }
+// 		assert(glob==0);
 // 		PC_SEM_PRODUCE(1);
 // 		pthread_mutex_lock(&m);
 // 		glob=1;
@@ -936,7 +936,7 @@ namespace test3 {
 // 		PC_SEM_CONSUME(1);
 // 		usleep(100000);
 // 		pthread_mutex_lock(&m);
-// 		if(glob<=1) { }
+// 		assert(glob<=1);
 // 		pthread_mutex_unlock(&m);
 // 	}
 
@@ -1240,7 +1240,7 @@ namespace test3 {
 // 		HANDLER Worker3=(HANDLER)Reader;
 // 		HANDLER Worker4=(HANDLER)Reader;
 // 		PTHREAD_RUN(2);
-// 		if(glob==20) { }
+// 		assert(glob==20);
 // 	}
 // 	REGISTER_TEST(Run,57);
 // }//namespace test57
@@ -1343,11 +1343,11 @@ namespace test3 {
 // 	//
 // 	int glob=0;
 // 	void Worker1(void ) {
-// 		if(glob==0) { return; }
+// 		assert(glob!=-777);
 // 	}
 // 	void Worker2(void ) {
 // 		usleep(100000);
-// 		if(glob==0) {  }
+// 		assert(glob!=-777);
 // 		PC_SEM_PRODUCE(1);
 // 	}
 // 	void Worker3(void ) {
@@ -1611,10 +1611,10 @@ namespace test3 {
 // 	}
 // 	void Worker2() {
 // 		while(ATOMIC_INCREMENT(&s_x,0)==0) ;
-// 		if(s_y>=0) { return ; }
+// 		assert(s_y>=0);
 // 	}
 // 	void Run() {
-// 		if(s_dummy[0]==0) { } //avoid compiler warning about 's_dummy unused'
+// 		assert(s_dummy[0]==0); //avoid compiler warning about 's_dummy unused'
 // 		PTHREAD_RUN(2);
 // 	}
 // 	REGISTER_TEST(Run,84);
@@ -1770,8 +1770,8 @@ namespace test3 {
 //   		virtual ~A() { a = 4; }
 // 	};
 // 	struct B : A {
-//   		B()  { if(a == 1) { } }
-//   		virtual ~B() { if(a == 3) { } }
+//   		B()  { assert(a != -1); }
+//   		virtual ~B() { assert(a != -1); }
 // 	};
 // 	struct C : B {
 //   		C()  { a = 2; }
@@ -1834,7 +1834,7 @@ namespace test3 {
 // 			int *p=glob;
 // 			mu.Unlock();
 // 			if(p) {
-// 				if(p[42]==777) { }
+// 				assert(p[42]==777);
 // 				break;
 // 			}
 // 		}
@@ -2596,7 +2596,7 @@ namespace test3 {
 // 	const int kIdx=77;
 // 	StealthNotification n;
 // 	void Read() {
-// 		if(glob[kIdx]==777) { }
+// 		assert(glob[kIdx]==777);
 // 		n.signal();
 // 	}
 // 	void Free() {
@@ -2624,7 +2624,7 @@ namespace test3 {
 // 	}
 // 	void Read() {
 // 		n.wait();
-// 		if(glob[kIdx]!=0x123456) { }
+// 		assert(glob[kIdx]!=0x123456);
 // 	}
 // 	void Run() {
 // 		glob=(int *)malloc(100 * sizeof(int));
@@ -2675,7 +2675,7 @@ namespace test3 {
 // 	  	//   2. Call ANNOTATE_PURE_HAPPENS_BEFORE_MUTEX(&mu)
 // 	  	//      in InitAllBeforeStartingThreads()
 // 	  	//   3. (preferred) Use WaitForAllThreadsToFinish_Good() (see below).
-//   		if(vec->empty()) { }
+//   		assert(vec->empty());
 //   		delete vec;
 // 	}
 
@@ -2694,14 +2694,14 @@ namespace test3 {
 // // test506: TN. massive HB's using Barriers
 // namespace test506 {
 // 	int glob=0;
-// 	const int N=8,ITERATOR=100;
+// 	const int N=4,ITERATOR=10;
 // 	Barrier *barrier[ITERATOR];
 // 	Mutex mu;
 
 // 	void Worker() {
 // 		for(int i=0;i<ITERATOR;i++) {
 // 			mu.Lock();
-// 			glob++;
+// 			cout<<++glob<<endl;
 // 			mu.Unlock();
 // 			barrier[i]->Block();
 // 		}
@@ -2709,14 +2709,14 @@ namespace test3 {
 
 // 	void Run() {
 // 		for(int i=0;i<ITERATOR;i++)
-// 			barrier[i]=new Barrier(N);
-// 		{
+// 		{	barrier[i]=new Barrier(N); }
+// 		{ //automatically destruct
 // 			ThreadPool pool(N);
 // 			pool.StartWorkers();
 // 			for(int i=0;i<N;i++)
 // 				pool.Add(NewCallBack(Worker));
 // 		}
-// 		if(glob==N*ITERATOR) { }
+// 		assert(glob==N*ITERATOR);
 // 		for(int i=0;i<ITERATOR;i++)
 // 			delete barrier[i];
 // 	}
@@ -2887,7 +2887,7 @@ namespace test3 {
 // 		// unlink deletes a file 'filename'
 //   		// which exits spin-loop in Waiter1().
 //   		printf("  Deleting file...\n");
-//   		if(unlink(file_name)==0) { }
+//   		assert(unlink(file_name)==0);
 // 	}
 // 	void Waiter1() {
 // 		FILE *tmp;
@@ -2904,7 +2904,7 @@ namespace test3 {
 // 		// rmdir deletes a directory 'dir_name'
 //   		// which exit spin-loop in Waker().
 //   		printf("  Deleting directory...\n");
-//   		if(rmdir(dir_name) == 0) { }
+//   		assert(rmdir(dir_name) == 0);
 // 	}
 // 	void Waiter2() {
 // 		DIR *tmp;
@@ -2917,7 +2917,7 @@ namespace test3 {
 // 	}
 // 	void Run() {
 // 		dir_name=strdup("/tmp/data-race-XXXXXX");
-// 		if(mkdtemp(dir_name)!=NULL) { }//dir_name is unqiue
+// 		assert(mkdtemp(dir_name)!=NULL);//dir_name is unqiue
 
 // 		file_name=strdup((std::string()+dir_name+"/XXXXXX").c_str());
 // 		const int fd=mkstemp(file_name);//create and open temp file
@@ -3045,7 +3045,7 @@ namespace test3 {
 // 		*value=2;
 // 		pthread_setspecific(key,value);
 // 		int *read=(int *)pthread_getspecific(key);
-// 		if(read==value) { }
+// 		assert(read==value);
 // 	}
 // 	void Worker1() { DoWork(0); }
 // 	void Worker2() { DoWork(1); }
@@ -3056,7 +3056,7 @@ namespace test3 {
 // 		t.Start();
 // 		t.Join();
 // 		for(int i=0;i<2;i++)
-// 			if(tsd_array[i]==kInitialValue) { }
+// 			assert(tsd_array[i]==kInitialValue);
 // 	}
 // 	REGISTER_TEST(Run,606);
 // }//namespace test606

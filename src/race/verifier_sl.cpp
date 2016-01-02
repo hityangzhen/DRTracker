@@ -18,11 +18,16 @@ bool VerifierSl::Enabled()
 
 void VerifierSl::Register()
 {
+	Verifier::Register();
 	knob_->RegisterBool("race_verify_sl","whether enable the race verify_sl",
 		"0");
-	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
-		"4");
-	knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
+	// knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
+	// 	"4");
+	// knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
+	// knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
+	// 	"0");
+	// knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
+	// 	" and wait region","0");
 }
 
 Verifier::Meta *VerifierSl::GetMeta(address_t addr)

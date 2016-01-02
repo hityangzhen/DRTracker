@@ -34,8 +34,9 @@ pintools += \
 race_profiler_objs := \
   race/cond_wait.o \
   race/loop.o \
-  race/verifier.o \
-  race/verifier_ml.o \
+  race/adhoc_sync.o \
+  race/detector.o \
+  race/multilock_hb.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

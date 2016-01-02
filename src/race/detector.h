@@ -12,13 +12,12 @@
 #include "core/lock_set.h"
 #include "race/adhoc_sync.h"
 #include "race/loop.h"
+#include "race/cond_wait.h"
 
 namespace race {
 
 class Detector:public Analyzer {
 public:
-  typedef std::map<int,Loop> LoopTable;
-  typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
 
 	Detector();
 	virtual ~Detector();
@@ -31,36 +30,70 @@ public:
     address_t data_start, size_t data_size,address_t bss_start, size_t bss_size);
   virtual void ImageUnload(Image *image,address_t low_addr, address_t high_addr,
     address_t data_start, size_t data_size,address_t bss_start, size_t bss_size);
+  
+  //thread start-exit
   virtual void ThreadStart(thread_t curr_thd_id, thread_t parent_thd_id);
-
-  	//only need to know read or write memory access
+  virtual void ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk);
+  
+  //read-write
   virtual void BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     Inst *inst, address_t addr, size_t size);
   virtual void BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     Inst *inst, address_t addr, size_t size);
+  
+  //atomic inst
   virtual void BeforeAtomicInst(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,std::string type, address_t addr);
   virtual void AfterAtomicInst(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,std::string type, address_t addr);
+
+  //thread create-join
   virtual void AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
   	Inst *inst,thread_t childThdId);
-  virtual void AfterPthreadJoin(thread_t curr_thd_id,
-    timestamp_t curr_thd_clk, Inst *inst,thread_t child_thd_id);
+  virtual void BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,thread_t child_thd_id);
+  virtual void AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,thread_t child_thd_id);
+
+  //call-return
+  virtual void BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,address_t target);
+  virtual void AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,address_t target,address_t ret);
+  virtual void BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,address_t target);
+  virtual void AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,address_t target);
+
+  //mutex lock
+  virtual void BeforePthreadMutexTryLock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
+  virtual void BeforePthreadMutexLock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
   virtual void AfterPthreadMutexLock(thread_t curr_thd_id,
     timestamp_t curr_thd_clk,Inst *inst, address_t addr);
   virtual void BeforePthreadMutexUnlock(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t addr);
   virtual void AfterPthreadMutexTryLock(thread_t currThdId,
     timestamp_t currThdClk,Inst *inst,address_t addr,int ret_val);
-  	//read-write lock
+
+  //read-write lock
+  virtual void BeforePthreadRwlockRdlock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadRwlockRdlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr) ;
+  virtual void BeforePthreadRwlockWrlock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
 	virtual void AfterPthreadRwlockWrlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr) ;
 	virtual void BeforePthreadRwlockUnlock(thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,Inst *inst,address_t addr) ;
+  virtual void BeforePthreadRwlockTryRdlock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
   virtual void AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,
     timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
+  virtual void BeforePthreadRwlockTryWrlock(thread_t curr_thd_id,
+    timestamp_t curr_thd_clk,Inst *inst,address_t addr);
   virtual void AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,
     timestamp_t curr_thd_clk,Inst *inst,address_t addr,int ret_val);
 
@@ -101,12 +134,16 @@ public:
   //semaphore
   virtual void BeforeSemPost(thread_t curr_thd_id,timestamp_t curr_thd_clk,
       Inst *inst,address_t addr);
+  virtual void BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+      Inst *inst,address_t addr);
   virtual void AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
       Inst *inst,address_t addr);
 
   void SaveStatistics(const char *file_name);
 
 protected:
+  typedef std::map<int,Loop> LoopTable;
+  typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
 	//the abstract meta data for the memory
 	class Meta {
 	public:
@@ -204,13 +241,28 @@ protected:
   virtual void ProcessFree(BarrierMeta *meta);
   virtual void ProcessFree(SemMeta *meta);
 
-  void LoadLoops();
+  //dynamic loop identify
+  void LoadLoops(const char *file_name);
+
+  //ad-hoc wrapper functions
+  void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
+  //cond_wait wrapper functions
+  void ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr);
+  bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+    address_t addr);
+  bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+    address_t addr,std::string &file_name,int line);
+  void ProcessCondWaitCalledFuncWrite(thread_t curr_thd_id,
+    address_t addr);
+  void ProcessSignalCondWaitSync(thread_t curr_thd_id,Inst *curr_inst);
 
 	Mutex *internal_lock_;
 	RaceDB *race_db_;
 	address_t unit_size_;
 	RegionFilter *filter_;
+
   AdhocSync *adhoc_sync_;
+  LoopMap loop_map_;
 	//
 	MutexMeta::Table mutex_meta_table_;
 	Meta::Table meta_table_;
@@ -218,12 +270,13 @@ protected:
   BarrierMeta::Table barrier_meta_table_;
   SemMeta::Table sem_meta_table_;
 
-  LoopMap loop_map_;
-
 	std::map<thread_t,VectorClock *> curr_vc_map_;
 	std::map<thread_t,bool> atomic_map_; //whether executing atomic inst.
-
   uint64 vc_mem_size_;
+  //loop info
+  LoopDB *loop_db_;
+  //cond_wait info
+  CondWaitDB *cond_wait_db_;
 };
 
 

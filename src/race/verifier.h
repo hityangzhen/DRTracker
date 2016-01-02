@@ -230,6 +230,16 @@ public:
 	virtual void AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 		Inst *inst,thread_t child_thd_id);
 
+	//call-return
+	virtual void BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+		Inst *inst,address_t target);
+	virtual void AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+		Inst *inst,address_t target,address_t ret);
+	virtual void BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+		Inst *inst,address_t target);
+	virtual void AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+		Inst *inst,address_t target);
+
 	//read-write
 	virtual void BeforeMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,address_t addr,size_t size);

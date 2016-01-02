@@ -18,7 +18,7 @@ public:
 	bool HookMallocFunc() {return hook_malloc_func_;}
 	bool HookPthreadFunc() {return hook_pthread_func_;}
 	bool HookAtomicInst() {return hook_atomic_inst_;}
-	bool HookCallReturn() {return track_call_stack_;}
+	bool HookCallReturn() {return hook_call_return_;}
 	bool HookMainFunc() { return hook_main_func_; }
 	bool TrackCallStack() { return track_call_stack_; }
 	bool TrackInstCount() { return track_inst_count_; }
@@ -30,7 +30,7 @@ public:
 	void SetHookPthreadFunc() {hook_pthread_func_=true;}
 	void SetHookMainFunc() { hook_main_func_ = true; }
 	void SetHookAtomicInst() {hook_atomic_inst_=true;}
-	void SetHookCallReturn() {track_call_stack_=true;}
+	void SetHookCallReturn() {hook_call_return_=true;}
 	void SetTrackCallStack() { track_call_stack_ = true; }
 	void SetTrackInstCount() { track_inst_count_=true; }
 	void SetNoSkipStackAccess() {  skip_stack_access_=false;}

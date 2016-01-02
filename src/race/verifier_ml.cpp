@@ -24,13 +24,16 @@ bool VerifierMl::Enabled()
 
 void VerifierMl::Register()
 {
+	Verifier::Register();
 	knob_->RegisterBool("race_verify_ml","whether enable the race_verify_ml",
 		"0");
-	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
-		"4");
-	knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
-	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
-		"0");
+	// knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes",
+	// 	"4");
+	// knob_->RegisterInt("ss_deq_len","max length of the snapshot deque","10");
+	// knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
+	// 	"0");
+	// knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
+	// 	" and wait region","0");
 }
 
 Verifier::Meta* VerifierMl::GetMeta(address_t addr)
@@ -129,8 +132,8 @@ RaceType VerifierMl::HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
 	LockSet *curr_rdls=thd_rdls_map_[curr_thd_id];
 	LockSet *curr_ls=thd_ls_map_[curr_thd_id];
 
-INFO_FMT_PRINT("===========meta_ss clk:[%ld],thd_clk:[%ld]=============\n",
-	mlmeta_ss->thd_clk,thd_clk);
+// INFO_FMT_PRINT("===========meta_ss clk:[%ld],thd_clk:[%ld]=============\n",
+// 	mlmeta_ss->thd_clk,thd_clk);
 
 	if(curr_type==RACE_EVENT_WRITE && mlmeta_ss->thd_clk>thd_clk) {
 		if(mlmeta_ss->type==RACE_EVENT_WRITE && 

@@ -14,7 +14,6 @@ MultiLockHb::~MultiLockHb()
 	}
 }
 
-
 void MultiLockHb::Register()
 {
 	Detector::Register();
@@ -40,6 +39,8 @@ void MultiLockHb::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_th
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
+	if(cond_wait_db_)
+		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
 	LockSet *curr_lockset;
 	if(curr_lockset_table_.find(curr_thd_id)==curr_lockset_table_.end() ||
 		!curr_lockset_table_[curr_thd_id])
@@ -55,6 +56,14 @@ void MultiLockHb::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_) {
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		//remove the unactived lock writes meta
+		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
+			addr);
+	}
 	LockSet *curr_lockset=curr_lockset_table_[curr_thd_id];
 	DEBUG_ASSERT(curr_lockset && curr_lockset->Exist(addr));
 	curr_lockset->Remove(addr);
@@ -87,6 +96,15 @@ void MultiLockHb::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t cur
 	LockCountIncrease();
 	//readwrite lock is either in writer lockset or in reader lockset
 	ScopedLock lock(internal_lock_);
+
+	if(loop_db_)
+		ProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_) {
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		//remove the unactived lock writes meta
+		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
+			addr);
+	}
 	bool found=false;
 	//search in reader lockset
 	if((curr_reader_lockset_table_.find(curr_thd_id)!=
@@ -221,7 +239,7 @@ void MultiLockHb::update_on_write(timestamp_t curr_clk,thread_t curr_thd,LockSet
 
 void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 {
-	//INFO_PRINT("process read\n");
+	// INFO_FMT_PRINT("==========process read:[%s]\n",inst->ToString().c_str());
 	MlMeta *ml_meta=dynamic_cast<MlMeta*>(meta);
 	DEBUG_ASSERT(ml_meta);
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
@@ -233,9 +251,21 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		//trivial lockset
 		curr_lockset_table_[curr_thd_id]=new LockSet;	
 	}
+
 	//temporary lockset-union of writer_lockset and reader_lockset
 	LockSet lock_set=*curr_lockset_table_[curr_thd_id];
 	update_on_read(curr_clk,curr_thd_id,&lock_set,ml_meta);
+
+	//if the spin thread
+	if(loop_db_ && (loop_db_->SpinRead(inst,RACE_EVENT_READ) ||
+		loop_db_->SpinReadCalledFuncThread(curr_thd_id))) {
+
+		loop_db_->SetSpinReadThread(curr_thd_id,inst);
+		loop_db_->SetSpinReadAddr(curr_thd_id,ml_meta->addr);
+		if(loop_db_->SpinReadCalledFuncThread(curr_thd_id))
+			loop_db_->SetSpinReadCallInst(curr_thd_id);
+	}
+
 	//write-read race
 	MlMeta::ThreadElspVecMap::iterator it=ml_meta->writer_elspvec_map.begin();
 	for(;it!=ml_meta->writer_elspvec_map.end();it++) {
@@ -248,13 +278,25 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=writer_elsp_vec->begin();
 			elsp_it!=writer_elsp_vec->end();elsp_it++) {
 
+			//parallel 
+			if((*elsp_it)->first>thd_clk) {
+				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
+				//spinning read thread
+				//write->read may be not racy
+				if(loop_db_ && loop_db_->SpinReadThread(curr_thd_id)) {
+					loop_db_->SetSpinRelevantWriteThreadAndInst(curr_thd_id,thd_id,
+						writer_inst);
+				}
+			}
+
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(&lock_set)) {
 
-				//PrintDebugRaceInfo("MULTILOCK_HB",WRITETOREAD,ml_meta,curr_thd_id,inst);
+				PrintDebugRaceInfo("MULTILOCK_HB",WRITETOREAD,ml_meta,curr_thd_id,inst);
 
 				ml_meta->racy=true;
 				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
+				
 				ReportRace(ml_meta,thd_id,writer_inst,RACE_EVENT_WRITE,
 					curr_thd_id,inst,RACE_EVENT_READ);
 			}
@@ -285,6 +327,17 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 
 	update_on_write(curr_clk,curr_thd_id,curr_lockset_table_[curr_thd_id],
 		ml_meta);
+
+	if(loop_db_ && loop_db_->SpinReadCalledFuncThread(curr_thd_id)) {
+		//not spinning read
+		if(loop_db_->SpinReadThread(curr_thd_id) && 
+			loop_db_->GetSpinReadAddr(curr_thd_id)==ml_meta->addr) {
+			loop_db_->SetSpinReadCalledFunc(curr_thd_id,NULL,false);
+			//remove the potential spinning read meta
+			loop_db_->RemoveSpinReadMeta(curr_thd_id);			
+		}
+	}
+
 	//write-write race
 	MlMeta::ThreadElspVecMap::iterator it=ml_meta->writer_elspvec_map.begin();
 	for(;it!=ml_meta->writer_elspvec_map.end();it++) {
@@ -293,8 +346,6 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		MlMeta::EpochLockSetPairVector *writer_elsp_vec=it->second;
 		thread_t thd_id=it->first;
 		timestamp_t thd_clk=curr_vc->GetClock(it->first);
-
-
 
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=writer_elsp_vec->begin();
 			elsp_it!=writer_elsp_vec->end();elsp_it++) {
@@ -306,7 +357,7 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {
 
-				//PrintDebugRaceInfo("MULTILOCK_HB",WRITETOWRITE,ml_meta,curr_thd_id,inst);
+				// PrintDebugRaceInfo("MULTILOCK_HB",WRITETOWRITE,ml_meta,curr_thd_id,inst);
 
 				ml_meta->racy=true;
 				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
@@ -326,12 +377,20 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=reader_elsp_vec->begin();
 			elsp_it!=reader_elsp_vec->end();elsp_it++) {
+			//parallel
+			if((*elsp_it)->first>thd_clk) {
+				//spinning read thread
+				if(loop_db_ && loop_db_->SpinReadThread(it->first)) {
+					loop_db_->SetSpinRelevantWriteThreadAndInst(it->first,curr_thd_id,
+						inst);
+				}
+			}
 
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {
 
-				//PrintDebugRaceInfo("MULTILOCK_HB",READTOWRITE,ml_meta,curr_thd_id,inst);
-
+				PrintDebugRaceInfo("MULTILOCK_HB",READTOWRITE,ml_meta,curr_thd_id,inst);
+				
 				ml_meta->racy=true;
 				Inst *reader_inst=ml_meta->reader_inst_table[thd_id];
 				ReportRace(ml_meta,thd_id,reader_inst,RACE_EVENT_READ,

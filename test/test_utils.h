@@ -284,8 +284,7 @@ pthread_barrier_t b;
 	PTHREAD_ID(num);     													\
 	PTHREAD_CREATE(num); 													\
 	PTHREAD_JOIN(num)
-
-
+	
 //semaphore
 #define PC_SEM_INIT_1(val) sem_init(&p_sem1,0,val);sem_init(&c_sem1,0,0)
 #define PC_SEM_INIT_2(val) PC_SEM_INIT_1(val); 								\

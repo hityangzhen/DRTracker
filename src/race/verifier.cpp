@@ -20,8 +20,10 @@ Verifier::~Verifier()
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
-	delete loop_db_;
-	delete cond_wait_db_;
+	if(loop_db_)
+		delete loop_db_;
+	if(cond_wait_db_)
+		delete cond_wait_db_;
 	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
@@ -73,7 +75,7 @@ bool Verifier::Enabled()
 
 void Verifier::Register()
 {
-	knob_->RegisterBool("race_verify","whether enable the race verify","0");
+	// knob_->RegisterBool("race_verify","whether enable the race verify","0");
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes","4");
 	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","0");
 	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
@@ -96,18 +98,25 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	desc_.SetHookPthreadFunc();
 	desc_.SetHookMallocFunc();
 	desc_.SetHookAtomicInst();
+	desc_.SetHookCallReturn();
 	//max length of the snapshot vector
 	ss_deq_len=knob_->ValueInt("ss_deq_len");
-	//ad-hoc
-	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
-		loop_db_=new LoopDB(race_db_);
-		loop_db_->LoadSpinReads(knob_->ValueStr("exiting_cond_lines").c_str());		
-	}
-	//cond_wait
-	if(knob_->ValueStr("cond_wait_lines").compare("0")!=0) {
-		cond_wait_db_=new CondWaitDB;
-		cond_wait_db_->LoadCondWait(knob_->ValueStr("cond_wait_lines").c_str());
-	}
+	// //ad-hoc
+	// if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
+	// 	loop_db_=new LoopDB(race_db_);
+	// 	if(!loop_db_->LoadSpinReads(knob_->ValueStr("exiting_cond_lines").c_str())) {
+	// 		delete loop_db_;
+	// 		loop_db_=NULL;
+	// 	}
+	// }
+	// //cond_wait
+	// if(knob_->ValueStr("cond_wait_lines").compare("0")!=0) {
+	// 	cond_wait_db_=new CondWaitDB;
+	// 	if(!cond_wait_db_->LoadCondWait(knob_->ValueStr("cond_wait_lines").c_str())) {
+	// 		delete cond_wait_db_;
+	// 		cond_wait_db_=NULL;
+	// 	}
+	// }
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -249,6 +258,42 @@ void Verifier::BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     Inst *inst, address_t addr)
 {
 	FreeAddrRegion(addr);
+}
+
+void Verifier::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	Inst *inst,address_t target)
+{
+	ScopedLock lock(internal_lock_);
+	INFO_FMT_PRINT("===============before call inst:[%d]===============\n",
+		inst->GetLine());
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+}
+
+void Verifier::AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	Inst *inst,address_t target,address_t ret)
+{
+
+}
+
+void Verifier::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	Inst *inst,address_t target)
+{
+	ScopedLock lock(internal_lock_);
+	INFO_FMT_PRINT("===============before return inst:[%d]===============\n",
+		inst->GetLine());
+	if(loop_db_)
+		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	if(cond_wait_db_)
+		ProcessSignalCondWaitSync(curr_thd_id,inst);
+}
+
+void Verifier::AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	Inst *inst,address_t target)
+{
+
 }
 
 void Verifier::BeforeMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
@@ -646,9 +691,11 @@ void Verifier::ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_
 void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 	size_t size,RaceEventType type)
 {
+	InternalLock();
 	//process write->read sync
 	if(loop_db_)
 		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
+	InternalUnlock();
 
 INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[%lx]=======\n",
 	curr_thd_id,inst->ToString().c_str(),addr);
@@ -662,6 +709,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 
+	InternalLock();
 	if(cond_wait_db_) {
 		//handle the previous signal/broadcast->cond_wait sync firstly
 		ProcessSignalCondWaitSync(curr_thd_id,inst);
@@ -677,6 +725,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 			}
 		}
 	}
+	InternalUnlock();
 
 	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
 	//typically lock signal write is not raced with cond_wait read
@@ -723,7 +772,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 		}
 		if(!flag) {//postpone current thread
 			//if the spin thread
-			if(loop_db_->SpinRead(file_name,line,type)) {
+			if(loop_db_ && loop_db_->SpinRead(file_name,line,type)) {
 				loop_db_->SetSpinReadThread(curr_thd_id,inst);
 			}
 			PostponeThread(curr_thd_id);
@@ -1004,7 +1053,7 @@ void Verifier::ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta)
 		cond_meta->wait_table.begin();iter!=cond_meta->wait_table.end();
 		iter++)
 		curr_vc->Join(&iter->second);
-	INFO_FMT_PRINT("===========current vc:[%s]============",curr_vc->ToString().c_str());
+	// INFO_FMT_PRINT("===========current vc:[%s]============",curr_vc->ToString().c_str());
 	//all potential waiters should know the newest vc from the signaler
 	for(CondMeta::ThreadVectorClockMap::iterator iter=
 		cond_meta->wait_table.begin();
@@ -1042,7 +1091,7 @@ INFO_PRINT("=================handle race===================\n");
 			pp_thds.insert(iter->first);
 			if(iter->second==false)
 				keep_up_thds.insert(iter->first);
-			if(loop_db_->SpinReadThread(iter->first))
+			if(loop_db_ && loop_db_->SpinReadThread(iter->first))
 				spin_thds.insert(iter->first);
 		}
 	}
@@ -1055,7 +1104,7 @@ INFO_PRINT("=================handle race===================\n");
 		return ;
 	}
 	//current thread is the spinning read thread
-	if(loop_db_->SpinReadThread(curr_thd_id)) {
+	if(loop_db_ && loop_db_->SpinReadThread(curr_thd_id)) {
 		DEBUG_ASSERT(pp_thds.size()<=1);
 		//postponed thread exist
 		if(!pp_thds.empty()) {
@@ -1254,7 +1303,7 @@ INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n"
 								meta_ss->inst,curr_thd_id,inst);
 						else {
 							//set the relevant write inst
-							if(loop_db_->SpinReadThread(iter->first))
+							if(loop_db_ && loop_db_->SpinReadThread(iter->first))
 								loop_db_->SetSpinRelevantWriteInst(iter->first,inst);
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
@@ -1266,12 +1315,12 @@ INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n"
 					}
 					else if(type==RACE_EVENT_READ) {
 						//spin read
-						if(loop_db_->SpinRead(inst,type))
+						if(loop_db_ && loop_db_->SpinRead(inst,type))
 							loop_db_->SetSpinReadThread(curr_thd_id,inst);							
 
 						if(meta_ss->type==RACE_EVENT_WRITE) {
 							//set the relevant write inst
-							if(loop_db_->SpinReadThread(curr_thd_id))
+							if(loop_db_ && loop_db_->SpinReadThread(curr_thd_id))
 								loop_db_->SetSpinRelevantWriteInst(curr_thd_id,
 									meta_ss->inst);
 
@@ -1436,6 +1485,7 @@ void Verifier::WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,
 void Verifier::ProcessLockSignalWrite(thread_t curr_thd_id,
 	address_t addr)
 {
+	INFO_FMT_PRINT("=========process lock signal write=========\n");
 	//current thread should be protected by at least one lock
 	address_t lk_addr=0;
 	if((lk_addr=cond_wait_db_->GetLastestLock(curr_thd_id))==0)

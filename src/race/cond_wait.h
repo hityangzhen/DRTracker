@@ -81,24 +81,35 @@ protected:
 	class CondWaitMeta {
 	public:
 		CondWaitMeta(LockSignalMeta *meta,Inst *inst):lsmeta(meta),
-			rdinst(inst) {}
+			rdinst(inst),callinst(NULL) {}
 		~CondWaitMeta() {}
 		LockSignalMeta *lsmeta;
 		Inst *rdinst;
+		Inst *callinst;
+		address_t addr;
+	};
+	class CondWaitCalledFuncMeta {
+	public:
+		CondWaitCalledFuncMeta() {}
+		CondWaitCalledFuncMeta(Inst *i,bool f):inst(i),flag(f) {}
+		~CondWaitCalledFuncMeta() {}
+		Inst *inst;
+		bool flag;
 	};
 public:
 	typedef std::tr1::unordered_map<int,Loop *> CondWaitLoopTable;
 	typedef std::tr1::unordered_map<std::string,CondWaitLoopTable *> 
 		CondWaitLoopMap;
-	typedef std::tr1::unordered_set<std::string> 
-		ExitingCondLineSet;
+	typedef std::tr1::unordered_set<uint64> ExitingCondLineSet;
 	typedef std::deque<LockSignalMeta *> LockSignalMetaDeque;
 	typedef std::map<thread_t,LockSignalMetaDeque *> ThreadLSMetasMap;
 	typedef std::map<thread_t,CondWaitMeta *> ThreadCWMetaMap;
 	typedef std::map<thread_t,address_t> ThreadLockMap;
+	typedef std::map<thread_t,CondWaitCalledFuncMeta> 
+		ThreadCondWaitCFMetaMap;
 	CondWaitDB();
 	virtual ~CondWaitDB();
-	void LoadCondWait(const char *file_name);
+	bool LoadCondWait(const char *file_name);
 
 	void AddLockSignalWriteMeta(thread_t thd_id, VectorClock &vc,
 		address_t addr,address_t lk_addr);
@@ -106,12 +117,14 @@ public:
 		address_t addr,address_t lk_addr);
 	
 	void AddCondWaitMeta(thread_t thd_id,LockSignalMeta *lsmeta,
-		Inst *rdinst);
+		Inst *rdinst,address_t addr);
+	bool CondWaitMetaThread(thread_t thd_id);
 	void RemoveCondWaitMeta(thread_t thd_id);	
-
+	address_t GetCondWaitMetaAddr(thread_t thd_id);
 	bool CondWaitRead(Inst *inst,RaceEventType type);
 	bool CondWaitRead(std::string &file_name,int line,
 		RaceEventType type);
+	bool CondWaitCalledFunc(Inst *inst);
 
 	void AddLastestLock(thread_t curr_thd_id,address_t lk_addr) {
 		thd_lock_map_[curr_thd_id]=lk_addr;
@@ -131,6 +144,17 @@ public:
 	bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
 		VectorClock &curr_vc,address_t addr,std::string &file_name,
 		int line);
+	uint64 FilenameAndLineHash(std::string &file_name,int line) {
+		uint64 key=0;
+		for(size_t i=0;i<file_name.size();i++)
+			key += file_name[i];
+		key += line;
+		return key;
+	}
+	void SetCondWaitCalledFunc(thread_t curr_thd_id,Inst *inst,bool flag);
+	void RemoveCondWaitCalledFunc(thread_t curr_thd_id);
+	bool CondWaitCalledFuncThread(thread_t curr_thd_id);
+	void SetCondWaitCallInst(thread_t thd_id);
 protected:
 	CondWaitLoopMap cwloop_map_;
 	ExitingCondLineSet exiting_cond_line_set_;
@@ -140,6 +164,8 @@ protected:
 	ThreadCWMetaMap thd_cwmeta_map_;
 	//thread lastest lock mapping
 	ThreadLockMap thd_lock_map_;
+	//cond wait thread  and called function mapping
+	ThreadCondWaitCFMetaMap cwthd_cfmeta_map_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(CondWaitDB);
 };

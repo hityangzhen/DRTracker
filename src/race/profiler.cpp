@@ -38,8 +38,8 @@ void Profiler::HandlePreSetup()
 	// acculock_analyzer_=new AccuLock();
 	// acculock_analyzer_->Register();
 
-	// multilock_hb_analyzer_=new MultiLockHb();
-	// multilock_hb_analyzer_->Register();
+	multilock_hb_analyzer_=new MultiLockHb();
+	multilock_hb_analyzer_->Register();
 
 	// simple_lock_analyzer_=new SimpleLock();
 	// simple_lock_analyzer_->Register();
@@ -56,8 +56,8 @@ void Profiler::HandlePreSetup()
 	// verifier_sl_analyzer_=new VerifierSl();
 	// verifier_sl_analyzer_->Register();
 
-	verifier_ml_analyzer_=new VerifierMl();
-	verifier_ml_analyzer_->Register();
+	// verifier_ml_analyzer_=new VerifierMl();
+	// verifier_ml_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -117,10 +117,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(acculock_analyzer_);
 	// }
 
-	// if(multilock_hb_analyzer_->Enabled()) {
-	// 	multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(multilock_hb_analyzer_);
-	// }
+	if(multilock_hb_analyzer_->Enabled()) {
+		multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(multilock_hb_analyzer_);
+	}
 
 	// if(simple_lock_analyzer_->Enabled()) {
 	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
@@ -148,12 +148,12 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_sl_analyzer_);
 	// }
 
-	if(verifier_ml_analyzer_->Enabled()) {
-		LoadPStmts();
-		verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
-			race_db_,prace_db_);
-		AddAnalyzer(verifier_ml_analyzer_);
-	}
+	// if(verifier_ml_analyzer_->Enabled()) {
+	// 	LoadPStmts();
+	// 	verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
+	// 		race_db_,prace_db_);
+	// 	AddAnalyzer(verifier_ml_analyzer_);
+	// }
 
 	//==============================end============================
 }
@@ -200,8 +200,8 @@ void Profiler::HandleProgramExit()
 	//==============================end============================
 
 	//======================data race verifier=====================
-	delete verifier_ml_analyzer_;
-	delete prace_db_;
+	// delete verifier_ml_analyzer_;
+	// delete prace_db_;
 	//==============================end============================	
 }
 
