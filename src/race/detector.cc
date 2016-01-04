@@ -16,7 +16,7 @@ Detector::~Detector()
 {
 	delete internal_lock_;
 	delete filter_;
-	delete adhoc_sync_;
+	// delete adhoc_sync_;
 	for(std::map<thread_t,VectorClock *>::iterator it=curr_vc_map_.begin();
 		it!=curr_vc_map_.end();)
 		curr_vc_map_.erase(it++);
@@ -117,8 +117,8 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 	desc_.SetHookCallReturn();
 
 	//load loop range lines
-	if(knob_->ValueStr("loop_range_lines").compare("0")!=0)
-		LoadLoops(knob_->ValueStr("loop_range_lines").c_str());
+	// if(knob_->ValueStr("loop_range_lines").compare("0")!=0)
+	// 	LoadLoops(knob_->ValueStr("loop_range_lines").c_str());
 
 	//ad-hoc
 	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {

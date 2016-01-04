@@ -55,6 +55,7 @@ void *increment_counter(void *argv)
     if(counter == 0) {  
         counter++;  
         pthread_cond_signal(&counter_nonzero);   
+        counter++;  
     }  
     pthread_mutex_unlock(&counter_lock); sleep(1);
     pthread_mutex_unlock(&counter_lock2);

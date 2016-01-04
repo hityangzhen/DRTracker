@@ -4,6 +4,7 @@
 ***
 ####instrumented\_lines\_\*.out files contain instrumented line info.
 * **instrumented\_ lines\_\*.out (each line)** 
+
 > filename | instrumented line 
 
 ####static\_profile\_\*.out files contain potential racing stmt pair info.

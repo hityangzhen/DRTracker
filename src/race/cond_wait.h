@@ -9,6 +9,7 @@
 #include <map>
 #include <set>
 #include <deque>
+#include <stack>
 #include "core/basictypes.h"
 #include "core/vector_clock.h"
 #include "race/loop.h"
@@ -59,7 +60,7 @@ protected:
 	public:
 		typedef std::deque<LockWritesMeta *> LockWritesMetaDeque;
 		LockSignalMeta(VectorClock &vector_clock):vc(vector_clock),
-			expired(false),actived(false) {}
+			expired(false),actived(false),signal_unlock(false) {}
 		~LockSignalMeta() {
 			for(LockWritesMetaDeque::iterator iter=lk_wrs_metas.begin();
 				iter!=lk_wrs_metas.end();iter++) {
@@ -77,6 +78,7 @@ protected:
 		VectorClock vc;
 		bool expired;
 		bool actived; //encounter the signal to active
+		bool signal_unlock;
 	};
 	class CondWaitMeta {
 	public:
@@ -104,7 +106,7 @@ public:
 	typedef std::deque<LockSignalMeta *> LockSignalMetaDeque;
 	typedef std::map<thread_t,LockSignalMetaDeque *> ThreadLSMetasMap;
 	typedef std::map<thread_t,CondWaitMeta *> ThreadCWMetaMap;
-	typedef std::map<thread_t,address_t> ThreadLockMap;
+	typedef std::map<thread_t,std::stack<address_t> > ThreadLocksMap;
 	typedef std::map<thread_t,CondWaitCalledFuncMeta> 
 		ThreadCondWaitCFMetaMap;
 	CondWaitDB();
@@ -127,12 +129,13 @@ public:
 	bool CondWaitCalledFunc(Inst *inst);
 
 	void AddLastestLock(thread_t curr_thd_id,address_t lk_addr) {
-		thd_lock_map_[curr_thd_id]=lk_addr;
+		thd_locks_map_[curr_thd_id].push(lk_addr);
 	}
 	address_t GetLastestLock(thread_t curr_thd_id) {
-		if(thd_lock_map_.find(curr_thd_id)==thd_lock_map_.end())
+		if(thd_locks_map_.find(curr_thd_id)==thd_locks_map_.end()
+			|| thd_locks_map_[curr_thd_id].empty())
 			return 0;
-		return thd_lock_map_[curr_thd_id];
+		return thd_locks_map_[curr_thd_id].top();
 	}
 
 	void RemoveUnactivedLockWritesMeta(thread_t curr_thd_id,
@@ -163,7 +166,7 @@ protected:
 	//cond_wait thread's meta mapping
 	ThreadCWMetaMap thd_cwmeta_map_;
 	//thread lastest lock mapping
-	ThreadLockMap thd_lock_map_;
+	ThreadLocksMap thd_locks_map_;
 	//cond wait thread  and called function mapping
 	ThreadCondWaitCFMetaMap cwthd_cfmeta_map_;
 private:

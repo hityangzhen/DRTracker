@@ -1087,28 +1087,28 @@
 // 	assert(glob_57==20);
 // }
 
-// test58:TP.User defined synchronization.
-static int glob_58_1=1;
-static int glob_58_2=2;
-static int flag_58_1=0;
-static int flag_58_2=0;
-// Correctly synchronized test, but the common lockset is empty.
-// The variables FLAG1 and FLAG2 used for synchronization and as
-// temporary variables for swapping two global values.
-// Such kind of synchronization is rarely used (Excluded from all tests??).
-static void worker_58_1() {
-	flag_58_1=glob_58_2;
-	while(!flag_58_2) ;
-	glob_58_2=flag_58_2;
-}
-static void worker_58_2() {
-	flag_58_2=glob_58_1;
-	while(!flag_58_1) ;
-	glob_58_1=flag_58_1;
-}
-static void run_58() {
-	PTHREAD_RUN(2,worker_58_1,worker_58_2);
-}
+// // test58:TP.User defined synchronization.
+// static int glob_58_1=1;
+// static int glob_58_2=2;
+// static int flag_58_1=0;
+// static int flag_58_2=0;
+// // Correctly synchronized test, but the common lockset is empty.
+// // The variables FLAG1 and FLAG2 used for synchronization and as
+// // temporary variables for swapping two global values.
+// // Such kind of synchronization is rarely used (Excluded from all tests??).
+// static void worker_58_1() {
+// 	flag_58_1=glob_58_2;
+// 	while(!flag_58_2) ;
+// 	glob_58_2=flag_58_2;
+// }
+// static void worker_58_2() {
+// 	flag_58_2=glob_58_1;
+// 	while(!flag_58_1) ;
+// 	glob_58_1=flag_58_1;
+// }
+// static void run_58() {
+// 	PTHREAD_RUN(2,worker_58_1,worker_58_2);
+// }
 
 // // test60:TN.Correct synchronization using signal-wait
 // static int glob_60_1=1;
@@ -1639,10 +1639,10 @@ static void run_58() {
 // static int glob_101=0;
 // static int cond_101_1=0,cond_101_2=0;
 // static void signaller_101() {
-// 	usleep(100000);
+// 	//usleep(100000);
 // 	CV_SIGNAL_COND(cond_101_1,1);
 // 	glob_101=1;
-// 	usleep(500000);
+// 	// usleep(500000);
 // 	CV_SIGNAL_COND(cond_101_2,1);
 // }
 // static void waiter_101() {
@@ -2471,50 +2471,50 @@ static void run_58() {
 // 	PTHREAD_RUN(2,worker_607,worker_607);
 // }
 
-// //===========================belong to demo_tests=========================
-// // test302:Complex race which happens at least twice
-// static int glob_302=0;
-// static Lock lock_302_1, lock_302_2;
-// // In this test we have many different accesses to glob and only one access
-// // is not synchronized properly.
-// static void worker_302() {
-// 	int i;
-// 	for(i=0;i<100;i++) {
-// 		switch(i % 4) {
-// 	      case 0:
-// 	        // This read is protected correctly.
-// 	        lock(&lock_302_1); 
-// 	        assert(glob_302>=0);
-// 	        unlock(&lock_302_1);
-// 	        break;
-// 	      case 1:
-// 	        // Here we used the wrong lock! The reason of the race is here.
-// 	        lock(&lock_302_2); 
-// 	        assert(glob_302>=0);
-// 	        unlock(&lock_302_2);
-// 	        break;
-// 	      case 2:
-// 	        // This read is protected correctly.
-// 	        lock(&lock_302_1);
-// 	        assert(glob_302>=0);
-// 	        unlock(&lock_302_1);
-// 	        break;
-// 	      case 3:
-// 	        // This write is protected correctly.
-// 	        lock(&lock_302_2);
-// 	        glob_302++;
-// 	        unlock(&lock_302_2);
-// 	        break;
-// 	    }
-// 	    // sleep a bit so that the threads interleave
-// 	    // and the race happens at least twice.
-// 	    usleep(100);
-// 	}
-// }
-// static void run_302() {
-// 	LOCK_INIT(2,lock_302_1,lock_302_2);
-// 	PTHREAD_RUN(2,worker_302,worker_302);
-// }
+//===========================belong to demo_tests=========================
+// test302:Complex race which happens at least twice
+static int glob_302=0;
+static Lock lock_302_1, lock_302_2;
+// In this test we have many different accesses to glob and only one access
+// is not synchronized properly.
+static void worker_302() {
+	int i;
+	for(i=0;i<100;i++) {
+		switch(i % 4) {
+	      case 0:
+	        // This read is protected correctly.
+	        lock(&lock_302_1); 
+	        assert(glob_302>=0);
+	        unlock(&lock_302_1);
+	        break;
+	      case 1:
+	        // Here we used the wrong lock! The reason of the race is here.
+	        lock(&lock_302_2); 
+	        assert(glob_302>=0);
+	        unlock(&lock_302_2);
+	        break;
+	      case 2:
+	        // This read is protected correctly.
+	        lock(&lock_302_1);
+	        assert(glob_302>=0);
+	        unlock(&lock_302_1);
+	        break;
+	      case 3:
+	        // This write is protected correctly.
+	        lock(&lock_302_2);
+	        glob_302++;
+	        unlock(&lock_302_2);
+	        break;
+	    }
+	    // sleep a bit so that the threads interleave
+	    // and the race happens at least twice.
+	    usleep(100);
+	}
+}
+static void run_302() {
+	LOCK_INIT(2,lock_302_1,lock_302_2);
+	PTHREAD_RUN(2,worker_302,worker_302);
+}
 
 // // test305:A bit more tricky: two locks used inconsistenly.
 // static int glob_305=0;
@@ -2726,7 +2726,7 @@ int main()
 	// TEST_RUN(49);
 	// TEST_RUN(53);
 	// TEST_RUN(57);
-	TEST_RUN(58);
+	// TEST_RUN(58);
 	// TEST_RUN(60);
 	// TEST_RUN(61);
 	// TEST_RUN(64);
@@ -2774,7 +2774,7 @@ int main()
 	// TEST_RUN(605);
 	// TEST_RUN(606);
 	// TEST_RUN(607);
-	// TEST_RUN(302);
+	TEST_RUN(302);
 	// TEST_RUN(305);
 	// TEST_RUN(306);
 	// TEST_RUN(310);

@@ -3098,15 +3098,15 @@ namespace test3 {
 // 			switch(i % 4) {
 //       			case 0:
 //         			// This read is protected correctly.
-//         			mu1.Lock(); if(glob >= 0) { } mu1.Unlock();
+//         			mu1.Lock(); assert(glob >= 0); mu1.Unlock();
 //         			break;
 //       			case 1:
 //         			// Here we used the wrong lock! The reason of the race is here.
-//         			mu2.Lock(); if(glob >= 0) { } mu2.Unlock();
+//         			mu2.Lock(); assert(glob >= 0); mu2.Unlock();
 //         			break;
 //       			case 2:
 //         			// This read is protected correctly.
-//         			mu1.Lock(); if(glob >= 0) { } mu1.Unlock();
+//         			mu1.Lock(); assert(glob >= 0); mu1.Unlock();
 //         			break;
 //       			case 3:
 //         			// This write is protected correctly.
