@@ -177,6 +177,13 @@ std::string VectorClock::ToString()
 	for(ThreadClockMap::iterator it=map_.begin();it!=map_.end();it++)
 		ss<<"T"<<std::hex<<it->first<<":"<<std::dec<<it->second<<" ";
 	ss<<"]";
+	return ss.str();
+}
 
+std::string VectorClock::OutputString()
+{
+	std::stringstream ss;
+	for(ThreadClockMap::iterator it=map_.begin();it!=map_.end();it++)
+		ss<<std::hex<<it->first<<":"<<std::dec<<it->second<<",";
 	return ss.str();
 }

@@ -137,7 +137,7 @@ void LoopDB::RemoveSpinReadCalledFunc(thread_t curr_thd_id)
 		delete iter->second;
 		spinthd_cfmeta_map_.erase(curr_thd_id);		
 	}
-}	
+}
 
 bool LoopDB::LoadSpinReads(const char *file_name)
 {
@@ -248,6 +248,7 @@ INFO_FMT_PRINT("+++++++++++++++write->read sync,curr inst:[%s]++++++++++++++\n",
 		std::map<Race*,RaceEvent*> result; //race and corresponding read event
 		race_db_->FindRacesByOneSide(spin_rlt_wrthd,spin_rlt_wrinst,
 			RACE_EVENT_WRITE,result,false);
+
 		for(std::map<Race*,RaceEvent*>::iterator iter=result.begin();
 			iter!=result.end();iter++) {
 			RaceEvent *race_event=iter->second;

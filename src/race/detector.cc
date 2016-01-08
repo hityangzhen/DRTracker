@@ -7,23 +7,19 @@
 namespace race {
 
 Detector::Detector():internal_lock_(NULL),race_db_(NULL),unit_size_(4),
-	filter_(NULL),vc_mem_size_(0),loop_db_(NULL),cond_wait_db_(NULL)
-{
-	// adhoc_sync_=new AdhocSync;
-}
+	filter_(NULL),vc_mem_size_(0),adhoc_sync_(NULL),loop_db_(NULL),
+	cond_wait_db_(NULL)
+{}
 
 Detector::~Detector() 
 {
 	delete internal_lock_;
 	delete filter_;
-	// delete adhoc_sync_;
 	for(std::map<thread_t,VectorClock *>::iterator it=curr_vc_map_.begin();
 		it!=curr_vc_map_.end();)
 		curr_vc_map_.erase(it++);
-	//clear loops
-	for(LoopMap::iterator iter=loop_map_.begin();iter!=loop_map_.end();
-		iter++)
-		delete iter->second;
+	if(adhoc_sync_)
+		delete adhoc_sync_;
 	if(loop_db_)
 		delete loop_db_;
 	if(cond_wait_db_)
@@ -94,8 +90,8 @@ void Detector::PrintDebugRaceInfo(const char *detector_name,RaceType race_type,
 void Detector::Register()
 {
 	knob_->RegisterInt("unit_size_","the monitoring granularity in bytes","4");
-	// knob_->RegisterStr("loop_range_lines","the loop's start line and end line",
-	// 	"0");
+	knob_->RegisterStr("loop_range_lines","the loop's start line and end line",
+		"0");
 	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
 		"0");
 	knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
@@ -116,11 +112,16 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 	desc_.SetHookAtomicInst();
 	desc_.SetHookCallReturn();
 
-	//load loop range lines
-	// if(knob_->ValueStr("loop_range_lines").compare("0")!=0)
-	// 	LoadLoops(knob_->ValueStr("loop_range_lines").c_str());
-
-	//ad-hoc
+	//dynamic ad-hoc
+	if(knob_->ValueStr("loop_range_lines").compare("0")!=0) {
+		// LoadLoops();
+		adhoc_sync_=new AdhocSync;
+		if(!adhoc_sync_->LoadLoops(knob_->ValueStr("loop_range_lines").c_str())) {
+			delete adhoc_sync_;
+			adhoc_sync_=NULL;
+		}
+	}
+	//spinning read loop
 	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
 		loop_db_=new LoopDB(race_db_);
 		if(!loop_db_->LoadSpinReads(knob_->ValueStr("exiting_cond_lines").c_str())) {
@@ -188,6 +189,10 @@ void Detector::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 		ProcessWriteReadSync(curr_thd_id,NULL);
 	if(cond_wait_db_)
 		ProcessSignalCondWaitSync(curr_thd_id,NULL);
+	if(curr_vc_map_[curr_thd_id]) {
+		delete curr_vc_map_[curr_thd_id];
+		curr_vc_map_.erase(curr_thd_id);		
+	}
 }
 
 void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
@@ -224,50 +229,30 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 				break;
 		}
 	}
+	
+	//use the cyclic counting to identify spinning read loop
+	std::set<AdhocSync::ReadMeta *> rd_metas;
+	AdhocSync::WriteMeta *wr_meta=NULL;
+	if(adhoc_sync_) {
+		wr_meta=ProcessAdhocRead(curr_thd_id,inst,start_addr,end_addr,rd_metas);
+	}
 
-	//handle the read in loop
-// 	std::string file_name=inst->GetFileName();
-// 	size_t found=file_name.find_last_of("/");
-// 	file_name=file_name.substr(found+1);
-// 	int line=inst->GetLine();
-// 	AdhocSync::WriteMeta *wr_meta=NULL;
-// 	std::set<AdhocSync::ReadMeta *> rd_metas;
-// 	if(loop_map_.find(file_name)!=loop_map_.end()) {
-// 		//find the suitable loop
-// 		LoopTable::reverse_iterator iter;
-// 		for(iter=loop_map_[file_name]->rbegin();iter!=loop_map_[file_name]->rend();
-// 			iter++)
-// 			if(iter->first<=line)
-// 				break;
-// 		if(iter->second.InLoop(line)) {
-// INFO_PRINT("=================loop read==============\n");
-// 			wr_meta=adhoc_sync_->WriteReadSync(curr_thd_id,inst,start_addr,
-// 				end_addr);
-// 			if(wr_meta) {
-// 				adhoc_sync_->BuildWriteReadSync(wr_meta,
-// 					curr_vc_map_[wr_meta->GetLastestThread()],curr_vc_map_[curr_thd_id]);
-// 				//some races may have been detected in the write access
-// 				adhoc_sync_->SameAddrReadMetas(curr_thd_id,start_addr,end_addr,
-// 					rd_metas);
-// 			}
-// 		}
-// 	}
 	// if wr_meta exists, which indidates this read is the last read in loop
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
 		DEBUG_ASSERT(meta);
 		ProcessRead(curr_thd_id,meta,inst);
 		//remove false races
-		// if(!rd_metas.empty()) {
-		// 	INFO_PRINT("=================adhoc identify==============\n");
-		// 	for(std::set<AdhocSync::ReadMeta *>::iterator iter=rd_metas.begin();
-		// 		iter!=rd_metas.end();iter++) {
-		// 		race_db_->RemoveRace(wr_meta->lastest_thd_id,wr_meta->inst,
-		// 			RACE_EVENT_WRITE,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,false);
-		// 		race_db_->RemoveRace(curr_thd_id,(*iter)->inst,RACE_EVENT_READ,
-		// 			wr_meta->lastest_thd_id,wr_meta->inst,RACE_EVENT_WRITE,false);
-		// 	}
-		// }
+		if(adhoc_sync_ && !rd_metas.empty() && wr_meta) {
+			INFO_PRINT("=================adhoc identify==============\n");
+			for(std::set<AdhocSync::ReadMeta *>::iterator iter=rd_metas.begin();
+				iter!=rd_metas.end();iter++) {
+				race_db_->RemoveRace(wr_meta->lastest_thd_id,wr_meta->inst,
+					RACE_EVENT_WRITE,curr_thd_id,(*iter)->inst,RACE_EVENT_READ,false);
+				race_db_->RemoveRace(curr_thd_id,(*iter)->inst,RACE_EVENT_READ,
+					wr_meta->lastest_thd_id,wr_meta->inst,RACE_EVENT_WRITE,false);
+			}
+		}
 	}
 }
 
@@ -305,8 +290,10 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 		}
 	}
 	//keep the lastest write
-	// adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,curr_vc_map_[curr_thd_id],
-	// 	inst,start_addr,end_addr);
+	if(adhoc_sync_) {
+		adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,curr_vc_map_[curr_thd_id],
+			inst,start_addr,end_addr);
+	}
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
@@ -994,26 +981,37 @@ void Detector::ProcessAfterSemWait(thread_t curr_thd_id,SemMeta *meta)
 	curr_vc->Increment(curr_thd_id);
 }
 
-void Detector::LoadLoops(const char *file_name)
+//use the cyclic counting to idenftify spinning read loop
+AdhocSync::WriteMeta *Detector::ProcessAdhocRead(thread_t curr_thd_id,Inst *rd_inst,
+    address_t start_addr,address_t end_addr,
+    std::set<AdhocSync::ReadMeta *> &result)
 {
-	const char *delimit=" ",*fn=NULL,*sl=NULL,*el=NULL;
-	char buffer[200];
-	std::fstream in(file_name,std::ios::in);
-	if(!in)
-		return ;
-	while(!in.eof()) {
-		in.getline(buffer,200,'\n');
-		fn=strtok(buffer,delimit);
-		sl=strtok(NULL,delimit);
-		el=strtok(NULL,delimit);
-		DEBUG_ASSERT(fn && sl && el);
-		std::string fn_str(fn);
-		if(loop_map_.find(fn_str)==loop_map_.end())
-			loop_map_[fn_str]=new LoopTable;
-		int sl_int=atoi(sl),el_int=atoi(el);
-		loop_map_[fn_str]->insert(std::make_pair(sl_int,Loop(sl_int,el_int)));
+	std::string file_name=rd_inst->GetFileName();
+	size_t found=file_name.find_last_of("/");
+	file_name=file_name.substr(found+1);
+	int line=rd_inst->GetLine();
+	AdhocSync::WriteMeta *wr_meta=NULL;
+	AdhocSync::LoopMap &loop_map=adhoc_sync_->GetLoops();
+	if(loop_map.find(file_name)!=loop_map.end()) {
+		//find the suitable loop
+		LoopTable::reverse_iterator iter;
+		for(iter=loop_map[file_name]->rbegin();iter!=loop_map[file_name]->rend();
+			iter++)
+			if(iter->first<=line)
+				break;
+		if(iter->second.InLoop(line)) {
+INFO_PRINT("=================loop read==============\n");
+			wr_meta=adhoc_sync_->WriteReadSync(curr_thd_id,rd_inst,start_addr,
+				end_addr);
+			if(wr_meta) {
+				adhoc_sync_->BuildWriteReadSync(wr_meta,
+					curr_vc_map_[wr_meta->GetLastestThread()],curr_vc_map_[curr_thd_id]);
+				//some races may have been detected in the write access
+				adhoc_sync_->SameAddrReadMetas(curr_thd_id,start_addr,end_addr,result);
+			}
+		}
 	}
-	in.close();
+	return wr_meta;
 }
 
 /**

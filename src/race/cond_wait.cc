@@ -350,7 +350,15 @@ void CondWaitDB::ProcessSignalCondWaitSync(thread_t curr_thd_id,
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	//lastest loop
-	Loop *loop=(*cwloop_map_[file_name])[rdinst->GetLine()];
+	Loop *loop=NULL;
+	//if the exiting condition is call func,may be the shared read occur in
+	//the called func.
+	if(cwloop_map_[file_name]->find(rdinst->GetLine()) == 
+		cwloop_map_[file_name]->end()) {
+		if(cwmeta->callinst)
+			loop=(*cwloop_map_[file_name])[cwmeta->callinst->GetLine()];
+	}else
+		loop=(*cwloop_map_[file_name])[rdinst->GetLine()];
 	DEBUG_ASSERT(loop);
 	//first inst out of the loop
 	if(!curr_inst || loop->OutLoopInProcedure(curr_inst->GetLine())) {

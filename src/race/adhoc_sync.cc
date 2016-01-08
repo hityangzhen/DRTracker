@@ -22,6 +22,11 @@ AdhocSync::~AdhocSync()
 	for(WriteMetaTable::iterator iter=wr_meta_table_.begin();
 		iter!=wr_meta_table_.end();iter++)
 		delete iter->second;
+
+	//clear loops
+	for(LoopMap::iterator iter=loop_map_.begin();iter!=loop_map_.end();
+		iter++)
+		delete iter->second;
 }
 
 AdhocSync::ReadMeta* AdhocSync::FindReadMeta(thread_t curr_thd_id,Inst *rd_inst)
@@ -85,6 +90,29 @@ void AdhocSync::AddOrUpdateWriteMeta(thread_t curr_thd_id,VectorClock *vc,
 		wr_meta->lastest_thd_id=curr_thd_id;
 		wr_meta->lastest_thd_vc=*vc;
 	}
+}
+
+bool AdhocSync::LoadLoops(const char *file_name)
+{
+	const char *delimit=" ",*fn=NULL,*sl=NULL,*el=NULL;
+	char buffer[200];
+	std::fstream in(file_name,std::ios::in);
+	if(!in)
+		return false;
+	while(!in.eof()) {
+		in.getline(buffer,200,'\n');
+		fn=strtok(buffer,delimit);
+		sl=strtok(NULL,delimit);
+		el=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && sl && el);
+		std::string fn_str(fn);
+		if(loop_map_.find(fn_str)==loop_map_.end())
+			loop_map_[fn_str]=new LoopTable;
+		int sl_int=atoi(sl),el_int=atoi(el);
+		loop_map_[fn_str]->insert(std::make_pair(sl_int,Loop(sl_int,el_int)));
+	}
+	in.close();
+	return true;
 }
 
 /**

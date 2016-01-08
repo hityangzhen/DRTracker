@@ -34,3 +34,9 @@
 ###relay\_out\_parse.py profile the result of the [RELAY](http://cseweb.ucsd.edu/~jvoung/race/) static analysis
 > **input: warnings.xml and warnings2.xml from the relay output**
 > **output: instrumented\_lines\_\*.out and static\_profile\_\*.out**
+
+###static\_profile\_\*\_group dir contains the grouped potential racing stmt pairs
+
+###group.py and group.sh are mainly to group the static\_profile\_\*.out
+> **input: static\_profile\_\*.out**
+> **output: static\_profile\_\*\_group dir which contains g\*.out files 

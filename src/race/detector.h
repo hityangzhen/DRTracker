@@ -241,10 +241,12 @@ protected:
   virtual void ProcessFree(BarrierMeta *meta);
   virtual void ProcessFree(SemMeta *meta);
 
-  //dynamic loop identify
-  void LoadLoops(const char *file_name);
+  //dynamic ah-hoc read identify
+  AdhocSync::WriteMeta *ProcessAdhocRead(thread_t curr_thd_id,Inst *rd_inst,
+    address_t start_addr,address_t end_addr,
+    std::set<AdhocSync::ReadMeta *> &result);
 
-  //ad-hoc wrapper functions
+  //spinning read wrapper functions
   void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
   //cond_wait wrapper functions
   void ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr);
@@ -260,9 +262,6 @@ protected:
 	RaceDB *race_db_;
 	address_t unit_size_;
 	RegionFilter *filter_;
-
-  AdhocSync *adhoc_sync_;
-  LoopMap loop_map_;
 	//
 	MutexMeta::Table mutex_meta_table_;
 	Meta::Table meta_table_;
@@ -273,6 +272,8 @@ protected:
 	std::map<thread_t,VectorClock *> curr_vc_map_;
 	std::map<thread_t,bool> atomic_map_; //whether executing atomic inst.
   uint64 vc_mem_size_;
+  //dynamic ad-hoc
+  AdhocSync *adhoc_sync_;
   //loop info
   LoopDB *loop_db_;
   //cond_wait info

@@ -23,6 +23,7 @@ srcs += \
   race/verifier_sl.cpp \
   race/adhoc_sync.cc \
   race/verifier_ml.cpp \
+  race/pre_group.cc \
   race/profiler.cpp \
   race/profiler_main.cpp \
   race/race.cc \
@@ -36,7 +37,7 @@ race_profiler_objs := \
   race/loop.o \
   race/adhoc_sync.o \
   race/detector.o \
-  race/multilock_hb.o \
+  race/pre_group.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \
@@ -61,6 +62,7 @@ race_objs := \
   race/verifier_sl.o \
   race/adhoc_sync.o \
   race/verifier_ml.o \
+  race/pre_group.o \
   race/loop.o \
   race/cond_wait.o \
   race/race.o \

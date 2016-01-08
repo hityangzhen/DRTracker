@@ -85,6 +85,7 @@ public:
 	typedef std::tr1::unordered_map<thread_t,SpinReadMeta *> SpinReadMetaTable;
 	typedef std::set<thread_t> SpinThreadSet;
 	typedef std::map<thread_t,SpinReadCalledFuncMeta *> ThreadSpinReadCFMetaMap;
+
 	LoopDB(RaceDB *race_db);
 	~LoopDB();
 	//ad-hoc
@@ -110,7 +111,6 @@ public:
 	void SetSpinReadCalledFunc(thread_t curr_thd_id,Inst *inst,bool flag);
 	void RemoveSpinReadCalledFunc(thread_t curr_thd_id);
 	bool SpinReadCalledFuncThread(thread_t curr_thd_id);
-
 	uint64 FilenameAndLineHash(std::string &file_name,int line) {
 		uint64 key=0;
 		for(size_t i=0;i<file_name.size();i++)

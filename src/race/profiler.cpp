@@ -38,8 +38,8 @@ void Profiler::HandlePreSetup()
 	// acculock_analyzer_=new AccuLock();
 	// acculock_analyzer_->Register();
 
-	multilock_hb_analyzer_=new MultiLockHb();
-	multilock_hb_analyzer_->Register();
+	// multilock_hb_analyzer_=new MultiLockHb();
+	// multilock_hb_analyzer_->Register();
 
 	// simple_lock_analyzer_=new SimpleLock();
 	// simple_lock_analyzer_->Register();
@@ -58,6 +58,9 @@ void Profiler::HandlePreSetup()
 
 	// verifier_ml_analyzer_=new VerifierMl();
 	// verifier_ml_analyzer_->Register();
+
+	pre_group_analyzer_=new PreGroup();
+	pre_group_analyzer_->Register();	
 	//==============================end============================	
 }
 
@@ -117,10 +120,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(acculock_analyzer_);
 	// }
 
-	if(multilock_hb_analyzer_->Enabled()) {
-		multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(multilock_hb_analyzer_);
-	}
+	// if(multilock_hb_analyzer_->Enabled()) {
+	// 	multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(multilock_hb_analyzer_);
+	// }
 
 	// if(simple_lock_analyzer_->Enabled()) {
 	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
@@ -155,6 +158,11 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_ml_analyzer_);
 	// }
 
+	if(pre_group_analyzer_->Enabled()) {
+		LoadPStmts2();
+		pre_group_analyzer_->Setup(CreateMutex(),prace_db_);
+		AddAnalyzer(pre_group_analyzer_);
+	}
 	//==============================end============================
 }
 
@@ -202,6 +210,10 @@ void Profiler::HandleProgramExit()
 	//======================data race verifier=====================
 	// delete verifier_ml_analyzer_;
 	// delete prace_db_;
+
+	pre_group_analyzer_->Export();
+	delete pre_group_analyzer_;
+	delete prace_db_;
 	//==============================end============================	
 }
 
@@ -227,4 +239,28 @@ void Profiler::LoadPStmts()
 		prace_db_->BuildRelationMapping(pstmt,fn,l);
 	}
 }
+
+void Profiler::LoadPStmts2()
+{
+	//load the pstmts into prace_db
+	prace_db_=new PRaceDB;
+	char buffer[100];
+	const char *delimit=" ", *fn=NULL, *l=NULL;
+	PStmt *pstmt=NULL;
+	for(std::tr1::unordered_set<std::string>::iterator iter=
+		static_profile_.begin();iter!=static_profile_.end();
+		iter++) {
+		iter->copy(buffer,iter->size(),0);
+		buffer[iter->size()]='\0';
+		fn=strtok(buffer,delimit);
+		l=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && l);
+		pstmt=prace_db_->GetSortedPStmtAndCreate(fn,l);
+		fn=strtok(NULL,delimit);				
+		l=strtok(NULL,delimit);
+		DEBUG_ASSERT(fn && l);
+		prace_db_->BuildRelationMapping(pstmt,fn,l);
+	}
+}
+
 }// namespace race

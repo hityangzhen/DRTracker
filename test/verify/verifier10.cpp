@@ -1,7 +1,7 @@
 #include <iostream>
 #include <pthread.h> 
 #include <stdio.h>
-
+#include <unistd.h>
 //declare the mutex and ondition variable
 pthread_mutex_t m1=PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t m2=PTHREAD_MUTEX_INITIALIZER;
@@ -36,7 +36,7 @@ void *task2(void *argv)
 
 void *task3(void *argv)
 {
-    pthread_mutex_lock(&m1);
+    sleep(2);pthread_mutex_lock(&m1);
     while(flag1!=1)
         pthread_cond_wait(&cv,&m1);
     pthread_mutex_unlock(&m1);
@@ -46,7 +46,7 @@ void *task3(void *argv)
 
 void *task4(void *argv)
 {
-    pthread_mutex_lock(&m2);
+    sleep(2);pthread_mutex_lock(&m2);
     while(flag2!=1)
         pthread_cond_wait(&cv,&m2);
     pthread_mutex_unlock(&m2);

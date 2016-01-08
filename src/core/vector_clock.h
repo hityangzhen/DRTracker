@@ -37,6 +37,7 @@ public:
 		map_.clear();
 	}
 	std::string ToString();
+	std::string OutputString();
 	//vector clock iterate for traversal
 	void IterBegin() {it_=map_.begin();}
 	bool IterEnd() { return it_==map_.end(); }

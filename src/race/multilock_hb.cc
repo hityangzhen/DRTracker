@@ -277,8 +277,7 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=writer_elsp_vec->begin();
 			elsp_it!=writer_elsp_vec->end();elsp_it++) {
-
-			//parallel 
+			//
 			if((*elsp_it)->first>thd_clk) {
 				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
 				//spinning read thread
@@ -291,16 +290,13 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(&lock_set)) {
-
 				PrintDebugRaceInfo("MULTILOCK_HB",WRITETOREAD,ml_meta,curr_thd_id,inst);
 
 				ml_meta->racy=true;
 				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
-				
 				ReportRace(ml_meta,thd_id,writer_inst,RACE_EVENT_WRITE,
 					curr_thd_id,inst,RACE_EVENT_READ);
 			}
-
 		}
 	}
 
@@ -388,9 +384,7 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {
-
 				PrintDebugRaceInfo("MULTILOCK_HB",READTOWRITE,ml_meta,curr_thd_id,inst);
-				
 				ml_meta->racy=true;
 				Inst *reader_inst=ml_meta->reader_inst_table[thd_id];
 				ReportRace(ml_meta,thd_id,reader_inst,RACE_EVENT_READ,

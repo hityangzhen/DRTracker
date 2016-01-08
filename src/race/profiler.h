@@ -20,6 +20,7 @@
 #include "race/verifier.h"
 #include "race/verifier_sl.h"
 #include "race/verifier_ml.h"
+#include "race/pre_group.h"
 
 namespace race{
 
@@ -42,7 +43,8 @@ public:
 			prace_db_(NULL),
 			verifier_analyzer_(NULL),
 			verifier_sl_analyzer_(NULL),
-			verifier_ml_analyzer_(NULL)
+			verifier_ml_analyzer_(NULL),
+			pre_group_analyzer_(NULL)
 	{}
 	~Profiler() {}
 protected:
@@ -72,9 +74,11 @@ protected:
 	Verifier *verifier_analyzer_;
 	VerifierSl *verifier_sl_analyzer_;
 	VerifierMl *verifier_ml_analyzer_;
+	PreGroup *pre_group_analyzer_;
 	//==============================end============================	
 private:
 	void LoadPStmts();
+	void LoadPStmts2();
 	DISALLOW_COPY_CONSTRUCTORS(Profiler);
 };
 
