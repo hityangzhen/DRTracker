@@ -189,10 +189,6 @@ void Detector::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 		ProcessWriteReadSync(curr_thd_id,NULL);
 	if(cond_wait_db_)
 		ProcessSignalCondWaitSync(curr_thd_id,NULL);
-	if(curr_vc_map_[curr_thd_id]) {
-		delete curr_vc_map_[curr_thd_id];
-		curr_vc_map_.erase(curr_thd_id);		
-	}
 }
 
 void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
@@ -340,6 +336,9 @@ void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	VectorClock *child_vc=curr_vc_map_[child_thd_id];
 	curr_vc->Join(child_vc);
 	curr_vc->Increment(curr_thd_id);
+	// remove the child thread vc
+	delete curr_vc_map_[child_thd_id];
+	curr_vc_map_.erase(child_thd_id);		
 }
 
 void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,

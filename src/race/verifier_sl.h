@@ -44,10 +44,10 @@ private:
 	void ProcessPostRwlockWrlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
 	void ProcessPreRwlockUnlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
 
-	RaceType HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
-		thread_t curr_thd_id,RaceEventType curr_type);
 	void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s);
+	RaceType HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
+		thread_t curr_thd_id,RaceEventType curr_type);
 private:
 	DISALLOW_COPY_CONSTRUCTORS(VerifierSl);
 };

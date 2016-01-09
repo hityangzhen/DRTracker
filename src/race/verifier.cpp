@@ -10,6 +10,7 @@ namespace race
 //static initialize
 size_t Verifier::ss_deq_len=0;
 address_t Verifier::unit_size_=0;
+bool Verifier::history_race_analysis_=true;
 
 Verifier::Verifier():internal_lock_(NULL),verify_lock_(NULL),prace_db_(NULL),
 	filter_(NULL),loop_db_(NULL),cond_wait_db_(NULL)
@@ -77,11 +78,13 @@ void Verifier::Register()
 {
 	// knob_->RegisterBool("race_verify","whether enable the race verify","0");
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes","4");
-	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","0");
-	knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
-		"0");
-	knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
-		" and wait region","0");
+	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","10");
+	// knob_->RegisterStr("exiting_cond_lines","spin reads in each loop",
+	// 	"0");
+	// knob_->RegisterStr("cond_wait_lines","condition variable relevant signal"
+	// 	" and wait region","0");
+	knob_->RegisterBool("history_race_analysis","whether do the history race"
+		" analysis","1");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
@@ -101,6 +104,8 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	desc_.SetHookCallReturn();
 	//max length of the snapshot vector
 	ss_deq_len=knob_->ValueInt("ss_deq_len");
+	if(ss_deq_len<=0)
+		ss_deq_len=1;
 	// //ad-hoc
 	// if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
 	// 	loop_db_=new LoopDB(race_db_);
@@ -117,6 +122,9 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	// 		cond_wait_db_=NULL;
 	// 	}
 	// }
+
+	if(!knob_->ValueBool("history_race_analysis"))
+		history_race_analysis_=false;
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -696,10 +704,8 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 	if(loop_db_)
 		WakeUpAfterProcessWriteReadSync(curr_thd_id,inst);
 	InternalUnlock();
-
 INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[%lx]=======\n",
 	curr_thd_id,inst->ToString().c_str(),addr);
-
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 
@@ -709,6 +715,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 	file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 
+	//process cond_wait loop
 	InternalLock();
 	if(cond_wait_db_) {
 		//handle the previous signal/broadcast->cond_wait sync firstly
@@ -751,7 +758,6 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 		bool flag=true;
 		//accumulate the metas into pstmt corresponding metas
 		MAP_KEY_NOTFOUND_NEW(pstmt_metas_map_,pstmt,MetaSet);
-		// MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
 		MAP_KEY_NOTFOUND_NEW(thd_ppmetas_map_,curr_thd_id,MetaSet);
 
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
@@ -770,6 +776,7 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
 			flag=false;
 		}
+
 		if(!flag) {//postpone current thread
 			//if the spin thread
 			if(loop_db_ && loop_db_->SpinRead(file_name,line,type)) {
@@ -1151,7 +1158,7 @@ inline void Verifier::KeepupThread(thread_t curr_thd_id)
  */
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
-// INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
+INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
 //INFO_FMT_PRINT("=================avail_thd_set_ size:[%ld]===================\n",avail_thd_set_.size());
 	InternalLock();
 	//current thread is the only available thread, others may be blocked by some sync
@@ -1336,6 +1343,10 @@ INFO_FMT_PRINT("===========first pstmt line:[%d],curr addr:[%lx]=============\n"
 					}// else if(type==RACE_EVENT_READ)
 				}
 			}// verify the postponed thread's metas
+
+			//if history race analysis is unavailable
+			if(!history_race_analysis_)
+				continue;
 
 			//postponed racing metas will be ignored if it has been verified racy
 			//detect the history raced metas

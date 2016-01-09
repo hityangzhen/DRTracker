@@ -60,11 +60,11 @@ race_objs := \
   race/simplelock_plus.o \
   race/verifier.o \
   race/verifier_sl.o \
-  race/adhoc_sync.o \
   race/verifier_ml.o \
   race/pre_group.o \
   race/loop.o \
   race/cond_wait.o \
+  race/adhoc_sync.o \
   race/race.o \
   race/race.pb.o
   

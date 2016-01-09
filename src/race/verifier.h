@@ -459,6 +459,7 @@ protected:
 	RegionFilter *filter_;
 
 	static address_t unit_size_;
+	static bool history_race_analysis_;
 	//random thread id
 	thread_t rdm_thd_id_;
 

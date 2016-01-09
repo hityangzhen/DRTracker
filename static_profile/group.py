@@ -33,10 +33,10 @@ class PStmt(object):
 		same=True
 		for thd in self.vc_:
 			if thd not in pstmt2.vc_:
-				ts1=0
+				ts2=0
 			else:
-				ts1=self.vc_.get(thd)
-			ts2=pstmt2.vc_.get(thd)
+				ts2=pstmt2.vc_.get(thd)
+			ts1=self.vc_.get(thd)
 			if ts1>ts2:
 				return False
 			elif ts1<ts2:
@@ -53,15 +53,15 @@ class PStmtPair(object):
 		self.pstmt1_=pstmt1
 		self.pstmt2_=pstmt2
 
-	def happens_before(self,pstmtpair2):
+	def interferent_with(self,pstmtpair2):
 		"""
-		whether pstmts of current pstmtpair happens before 
+		whether pstmts of current pstmtpair is not interferent with
 		pstmts of pstmtpair2
 		"""
-		return self.pstmt1_.happens_before(pstmtpair2.pstmt1_) \
-		and self.pstmt1_.happens_before(pstmtpair2.pstmt2_) \
-		and self.pstmt2_.happens_before(pstmtpair2.pstmt1_) \
-		and self.pstmt2_.happens_before(pstmtpair2.pstmt1_)
+		return (self.pstmt1_.happens_before(pstmtpair2.pstmt1_)
+			and self.pstmt2_.happens_before(pstmtpair2.pstmt2_)) or \
+			(self.pstmt2_.happens_before(pstmtpair2.pstmt1_)
+			and self.pstmt1_.happens_before(pstmtpair2.pstmt2_))
 
 	def same_line(self,pstmtpair2):
 		"""
@@ -86,8 +86,8 @@ def create_pstmt(items):
 			continue
 		clk_items=clk.split(':')
 		# thread:timestamp
-		vc[clk_items[0]]=clk_items[1]
-	return PStmt(items[0],items[1],vc,items[3])
+		vc[clk_items[0]]=int(clk_items[1])
+	return PStmt(items[0],items[1],vc,int(items[3]))
 
 def sort_group():
 	"""
@@ -104,7 +104,8 @@ def valid_group(group,pstmtpair2):
 	for pp in group:
 		if pp.same_line(pstmtpair2):
 			continue
-		elif pp.happens_before(pstmtpair2) or pstmtpair2.happens_before(pp):
+		elif pp.interferent_with(pstmtpair2) or \
+			pstmtpair2.interferent_with(pp):
 			return True
 	return False
 
@@ -158,7 +159,7 @@ def export(outfile_name):
 
 if __name__=='__main__':
 	if len(sys.argv)!=3:
-		print 'usage: parse [infile_name] [outfile_dir]'
+		print 'usage: group.py [infile_name] [outfile_dir]'
 	else:
 		infile_name=sys.argv[1]
 		outfile_name=sys.argv[2]

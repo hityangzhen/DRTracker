@@ -39,4 +39,4 @@
 
 ###group.py and group.sh are mainly to group the static\_profile\_\*.out
 > **input: static\_profile\_\*.out**
-> **output: static\_profile\_\*\_group dir which contains g\*.out files 
+> **output: static\_profile\_\*\_group dir which contains g\*.out files**
