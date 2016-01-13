@@ -179,8 +179,8 @@ bool LoopDB::SpinRead(Inst *inst,RaceEventType type)
 	if(type==RACE_EVENT_WRITE)
 		return false;
 	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	return exiting_cond_line_set_.find(FilenameAndLineHash(file_name,line))!=
 		exiting_cond_line_set_.end();
@@ -189,8 +189,8 @@ bool LoopDB::SpinRead(Inst *inst,RaceEventType type)
 bool LoopDB::SpinReadCalledFunc(Inst *inst)
 {
 	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	return exiting_cond_line_set_.find(FilenameAndLineHash(file_name,line))!=
 		exiting_cond_line_set_.end();
@@ -218,8 +218,8 @@ INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",c
 
 	Inst *lastest_rdinst=rdmeta->spin_rdinst;
 	std::string file_name=lastest_rdinst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 
 	//lastest loop
 	Loop *loop=NULL;
@@ -241,8 +241,9 @@ INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",c
 		//construct write->read sync
 		curr_vc->Join(wrthd_vc);
 		wrthd_vc->Increment(spin_rlt_wrthd);
-		if(curr_inst)
+		if(curr_inst) {
 INFO_FMT_PRINT("+++++++++++++++write->read sync,curr inst:[%s]++++++++++++++\n",curr_inst->ToString().c_str());
+		}
 		//set the race constructed by exiting condition and lastest 
 		//write inst pair to be BENIGN
 		std::map<Race*,RaceEvent*> result; //race and corresponding read event
@@ -264,6 +265,15 @@ INFO_FMT_PRINT("++++++++++++++++benign race, read inst:[%s]++++++++++++++++\n",r
 	} else {
 		//postpone confirming if exting condition satisfied
 		rdmeta->spin_inner_count++;
+		//spinning read loop is invalid,may be just a computable loop 
+		if(spin_rlt_wrthd==0 && (!curr_inst ||
+			loop->OutLoopInProcedure(curr_inst->GetLine()))) {
+			if(curr_inst) {
+INFO_FMT_PRINT("+++++++++++++++computable loop,curr inst:[%s]++++++++++++++\n",curr_inst->ToString().c_str());
+			}
+			delete rdmeta;
+			spin_rdmeta_table_.erase(curr_thd_id);
+		}
 	}
 // INFO_PRINT("==============process write read sync end=============\n");
 }

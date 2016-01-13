@@ -190,8 +190,8 @@ bool CondWaitDB::CondWaitRead(Inst *inst,RaceEventType type)
 	if(type==RACE_EVENT_WRITE)
 		return false;
 	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	return exiting_cond_line_set_.find(FilenameAndLineHash(file_name,line))!=
 		exiting_cond_line_set_.end();
@@ -211,8 +211,8 @@ bool CondWaitDB::CondWaitRead(std::string &file_name,int line,
 bool CondWaitDB::CondWaitCalledFunc(Inst *inst)
 {
 	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 	return exiting_cond_line_set_.find(FilenameAndLineHash(file_name,line))!=
 		exiting_cond_line_set_.end();
@@ -347,8 +347,8 @@ void CondWaitDB::ProcessSignalCondWaitSync(thread_t curr_thd_id,
 	CondWaitMeta *cwmeta=thd_cwmeta_map_[curr_thd_id];
 	Inst *rdinst=cwmeta->rdinst;
 	std::string file_name=rdinst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	//lastest loop
 	Loop *loop=NULL;
 	//if the exiting condition is call func,may be the shared read occur in
@@ -365,8 +365,9 @@ void CondWaitDB::ProcessSignalCondWaitSync(thread_t curr_thd_id,
 		//construct write->read sync
 		curr_vc.Join(&cwmeta->lsmeta->vc);
 		//the signal sync opetaion will increase the vc
-		if(curr_inst)
+		if(curr_inst) {
 INFO_FMT_PRINT("+++++++++++++++write->read sync,curr inst:[%s]++++++++++++++\n",curr_inst->ToString().c_str());
+		}
 		//set the lock signal meta expired and it wil be free 
 		//at the next iteration
 		cwmeta->lsmeta->expired=true;

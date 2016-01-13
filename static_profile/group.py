@@ -53,7 +53,7 @@ class PStmtPair(object):
 		self.pstmt1_=pstmt1
 		self.pstmt2_=pstmt2
 
-	def interferent_with(self,pstmtpair2):
+	def non_interferent_with(self,pstmtpair2):
 		"""
 		whether pstmts of current pstmtpair is not interferent with
 		pstmts of pstmtpair2
@@ -103,11 +103,13 @@ def valid_group(group,pstmtpair2):
 	"""
 	for pp in group:
 		if pp.same_line(pstmtpair2):
+			return False
+		elif pp.non_interferent_with(pstmtpair2) or \
+			pstmtpair2.non_interferent_with(pp):
 			continue
-		elif pp.interferent_with(pstmtpair2) or \
-			pstmtpair2.interferent_with(pp):
-			return True
-	return False
+		else:
+			return False
+	return True
 
 def group(infile_name):
 	infile=open(infile_name)
@@ -117,6 +119,13 @@ def group(infile_name):
 			break
 		for line in lines:
 			items=line.split(' ')
+			valid=True
+			for item in items:
+				if item=='':
+					valid=False
+					break
+			if not valid:
+				continue
 			pstmt1=create_pstmt(items[:4])
 			pstmt2=create_pstmt(items[4:])
 			pp=PStmtPair(pstmt1,pstmt2)

@@ -60,31 +60,33 @@ void ExecutionControl::PostSetup()
 	if(knob_->ValueBool("partial_instrument")) {
 		//load static profile result
 		if(knob_->ValueStr("static_profile").compare("0")!=0) {
-			// char buffer[200];
-			// std::fstream in(knob_->ValueStr("static_profile").c_str(),
-			// 	std::ios::in);
-			// while(!in.eof()) {
-			// 	in.getline(buffer,200,'\n');
-			// 	static_profile_.insert(std::string(buffer));
-			// }
-			// in.close();
-			const char *filename=knob_->ValueStr("static_profile").c_str();
-			LOAD_LINES_TO_SET(filename,static_profile_);
+			char buffer[200];
+			std::fstream in(knob_->ValueStr("static_profile").c_str(),
+				std::ios::in);
+			while(!in.eof()) {
+				in.getline(buffer,200,'\n');
+				if(!isalpha(buffer[0]))
+					continue;
+				static_profile_.push_back(std::string(buffer));
+			}
+			in.close();
 			//load the instrumented lines
 			if(knob_->ValueStr("instrumented_lines").compare("0")!=0) {
-				// in.open(knob_->ValueStr("instrumented_lines").c_str(),
-				// 	std::ios::in);
-				// while(!in.eof()) {
-				// 	in.getline(buffer,100,'\n');
-				// 	instrumented_lines_.insert(std::string(buffer));
-				// }
-				// in.close();
-				const char *filename=knob_->ValueStr("instrumented_lines").c_str();
-				LOAD_LINES_TO_SET(filename,instrumented_lines_);
+				in.open(knob_->ValueStr("instrumented_lines").c_str(),
+					std::ios::in);
+				const char *delimit=" ", *fn=NULL, *l=NULL;
+				while(!in.eof()) {
+					in.getline(buffer,100,'\n');
+					if(!isalpha(buffer[0]))
+						continue;
+					fn=strtok(buffer,delimit);
+					l=strtok(NULL,delimit);
+					instrumented_lines_.insert(FilenameAndLineHash(fn,atoi(l)));
+				}
+				in.close();
 			}		
 		}
 	}
-
 	//Load static info.
 	sinfo_=new StaticInfo(CreateMutex());
 	sinfo_->Load(knob_->ValueStr("sinfo_in"));
@@ -131,12 +133,9 @@ bool ExecutionControl::FilterNonPotentialInstrument(std::string &filename,
 	}
 	else
 		PIN_GetSourceLocation(INS_Address(ins),NULL,&line,NULL);
-
-	std::stringstream ss;
-	ss<<filename<<" "<<line;
-
+	
 	if(instrumented_lines_.empty() || 
-		instrumented_lines_.find(ss.str())==instrumented_lines_.end())
+		instrumented_lines_.find(FilenameAndLineHash(filename,line))==instrumented_lines_.end())
 		return true;
 	return false;
 }
@@ -746,8 +745,10 @@ void ExecutionControl::UpdateInstDebugInfo(Inst *inst,ADDRINT pc)
 		//Also, acquiring the client lock is not required in
     	// instrumentation functions, only in analysis functions.
 		PIN_GetSourceLocation(pc,&column,&line,&file_name);
-		if(!file_name.empty())
-			inst->SetDebugInfo(file_name,line,column);
+		if(!file_name.empty()) {
+			size_t found=file_name.find_last_of("/");
+			inst->SetDebugInfo(file_name.substr(found+1),line,column);			
+		}
 	}
 }
 

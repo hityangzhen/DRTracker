@@ -37,7 +37,7 @@ race_profiler_objs := \
   race/loop.o \
   race/adhoc_sync.o \
   race/detector.o \
-  race/pre_group.o \
+  race/multilock_hb.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

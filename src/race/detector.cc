@@ -186,9 +186,9 @@ void Detector::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,NULL);
+		ProcessSRLSync(curr_thd_id,NULL);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,NULL);
+		ProcessCWLSync(curr_thd_id,NULL);
 }
 
 void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
@@ -200,9 +200,9 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 		return;
 	if(atomic_map_[curr_thd_id])
 		return;
-	//process write->spinning read sync
-	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+	// //process write->spinning read sync
+	// if(loop_db_)
+	// 	ProcessSRLSync(curr_thd_id,inst);
 
 	//do not specify the checked memory size
 	if(unit_size_==0) {
@@ -215,16 +215,16 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 
-	if(cond_wait_db_) {
-		//handle the previous signal/broadcast->cond_wait sync firstly
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
-		//do the signal/broadcast->cond_wait sync analysis
-		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
-			//process cond wait read
-			if(ProcessCondWaitRead(curr_thd_id,inst,iaddr))
-				break;
-		}
-	}
+	// if(cond_wait_db_) {
+	// 	//handle the previous signal/broadcast->cond_wait sync firstly
+	// 	ProcessCWLSync(curr_thd_id,inst);
+	// 	//do the signal/broadcast->cond_wait sync analysis
+	// 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+	// 		//process cond wait read
+	// 		if(ProcessCondWaitRead(curr_thd_id,inst,iaddr))
+	// 			break;
+	// 	}
+	// }
 	
 	//use the cyclic counting to identify spinning read loop
 	std::set<AdhocSync::ReadMeta *> rd_metas;
@@ -262,9 +262,9 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	if(atomic_map_[curr_thd_id])
 		return ;
 
-	//process write->spinning read sync
-	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+	// //process write->spinning read sync
+	// if(loop_db_)
+	// 	ProcessSRLSync(curr_thd_id,inst);
 
 	if(unit_size_==0) {
 		Meta *meta=GetMeta(addr);
@@ -276,15 +276,15 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 
-	if(cond_wait_db_) {
-		//handle the previous signal/broadcast->cond_wait sync firstly
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
-		//do the signal/broadcast->cond_wait sync analysis
-		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
-			ProcessLockSignalWrite(curr_thd_id,iaddr);
-			ProcessCondWaitCalledFuncWrite(curr_thd_id,iaddr);
-		}
-	}
+	// if(cond_wait_db_) {
+	// 	//handle the previous signal/broadcast->cond_wait sync firstly
+	// 	ProcessCWLSync(curr_thd_id,inst);
+	// 	//do the signal/broadcast->cond_wait sync analysis
+	// 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+	// 		ProcessLockSignalWrite(curr_thd_id,iaddr);
+	// 		ProcessCWLCalledFuncWrite(curr_thd_id,iaddr);
+	// 	}
+	// }
 	//keep the lastest write
 	if(adhoc_sync_) {
 		adhoc_sync_->AddOrUpdateWriteMeta(curr_thd_id,curr_vc_map_[curr_thd_id],
@@ -305,9 +305,9 @@ void Detector::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	ScopedLock lock(internal_lock_);
 	atomic_map_[curr_thd_id]=true;
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 //after going through the atomic inst ,we also recover mark for 
 //next instruction
@@ -323,9 +323,9 @@ void Detector::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
@@ -353,14 +353,14 @@ void Detector::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_) {
-		ProcessWriteReadSync(curr_thd_id,inst);	
+		ProcessSRLSync(curr_thd_id,inst);	
 		//exiting condtion line called function	
 		if(loop_db_->SpinReadCalledFunc(inst)) {
 			loop_db_->SetSpinReadCalledFunc(curr_thd_id,inst,true);
 		}
 	}
 	if(cond_wait_db_) {
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 		//exiting condtion line called function	
 		if(cond_wait_db_->CondWaitCalledFunc(inst)) {
 			cond_wait_db_->SetCondWaitCalledFunc(curr_thd_id,inst,true);
@@ -377,14 +377,15 @@ void Detector::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_) {
-		ProcessWriteReadSync(curr_thd_id,inst);		
+		ProcessSRLSync(curr_thd_id,inst);		
 	}
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 void Detector::AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target)
 {
+	ScopedLock lock(internal_lock_);
 	if(loop_db_) {
 		loop_db_->RemoveSpinReadCalledFunc(curr_thd_id);
 	}
@@ -397,9 +398,9 @@ void Detector::BeforePthreadMutexTryLock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::BeforePthreadMutexLock(thread_t curr_thd_id,
@@ -407,9 +408,9 @@ void Detector::BeforePthreadMutexLock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_) {
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 	}
 }
 
@@ -444,9 +445,9 @@ void Detector::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr_th
   	ScopedLock locker(internal_lock_);
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_) {
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 		//remove the unactived lock writes meta
 		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
 			addr);
@@ -461,9 +462,9 @@ void Detector::BeforePthreadRwlockRdlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
@@ -483,9 +484,9 @@ void Detector::BeforePthreadRwlockWrlock(thread_t curr_thd_id,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterPthreadRwlockWrlock(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
@@ -506,9 +507,9 @@ void Detector::BeforePthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t cur
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
@@ -525,9 +526,9 @@ void Detector::BeforePthreadRwlockTryWrlock(thread_t curr_thd_id,timestamp_t cur
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterPthreadRwlockTryWrlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
@@ -547,9 +548,9 @@ void Detector::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t curr_t
   	ScopedLock lock(internal_lock_);
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_) {
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 		//remove the unactived lock writes meta
 		cond_wait_db_->RemoveUnactivedLockWritesMeta(curr_thd_id,
 			addr);
@@ -566,7 +567,7 @@ void Detector::BeforePthreadCondSignal(thread_t curr_thd_id,
 	ScopedLock lock(internal_lock_);
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	//active the lock signal meta
 	if(cond_wait_db_)
 		cond_wait_db_->ActiveLockSignalMeta(curr_thd_id);
@@ -581,7 +582,7 @@ void Detector::BeforePthreadCondBroadcast(thread_t curr_thd_id,
 	ScopedLock lock(internal_lock_);
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	//active the lock signal meta
 	if(cond_wait_db_)
 		cond_wait_db_->ActiveLockSignalMeta(curr_thd_id);
@@ -598,7 +599,7 @@ void Detector::BeforePthreadCondWait(thread_t curr_thd_id,timestamp_t curr_thd_c
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(mutex_addr, unit_size_) == mutex_addr);
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(cond_addr, unit_size_) == cond_addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	//remove the cond_wait meta
 	if(cond_wait_db_)
 		cond_wait_db_->RemoveCondWaitMeta(curr_thd_id);
@@ -655,9 +656,9 @@ void Detector::BeforePthreadBarrierWait(thread_t curr_thd_id,
 	ScopedLock lock(internal_lock_);
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 	BarrierMeta *meta=GetBarrierMeta(addr);
 	DEBUG_ASSERT(meta);
 	ProcessPreBarrier(curr_thd_id,meta);
@@ -681,9 +682,9 @@ void Detector::BeforeSemPost(thread_t curr_thd_id,
 	ScopedLock lock(internal_lock_);
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 	SemMeta *meta=GetSemMeta(addr);
 	DEBUG_ASSERT(meta);
 	ProcessBeforeSemPost(curr_thd_id,meta);
@@ -694,9 +695,9 @@ void Detector::BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_)
-		ProcessWriteReadSync(curr_thd_id,inst);
+		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
-		ProcessSignalCondWaitSync(curr_thd_id,inst);
+		ProcessCWLSync(curr_thd_id,inst);
 }
 
 void Detector::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
@@ -1016,8 +1017,7 @@ INFO_PRINT("=================loop read==============\n");
 /**
  * if curr_inst is NULL, which indicates not to check if in the loop scope
  */
-inline
-void Detector::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst)
+void Detector::ProcessSRLSync(thread_t curr_thd_id,Inst *curr_inst)
 {
 	//process spinning read loop
 	thread_t spin_rlt_wrthd=loop_db_->
@@ -1026,8 +1026,48 @@ void Detector::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst)
 		curr_vc_map_[spin_rlt_wrthd],curr_vc_map_[curr_thd_id]);
 }
 
-void Detector::ProcessCondWaitCalledFuncWrite(thread_t curr_thd_id,
-	address_t addr)
+void Detector::ProcessSRLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr)
+{
+	//handle the previous write->spinning read sync
+	ProcessSRLSync(curr_thd_id,curr_inst);
+	//if the read of the spin thread
+	if(loop_db_->SpinRead(curr_inst,RACE_EVENT_READ) ||
+		loop_db_->SpinReadCalledFuncThread(curr_thd_id)) {
+		//initialize the spin read meta
+		loop_db_->SetSpinReadThread(curr_thd_id,curr_inst);
+		loop_db_->SetSpinReadAddr(curr_thd_id,addr);
+		//keep the call inst
+		if(loop_db_->SpinReadCalledFuncThread(curr_thd_id))
+			loop_db_->SetSpinReadCallInst(curr_thd_id);
+	}
+}
+
+void Detector::ProcessSRLWrite(thread_t curr_thd_id,Inst *curr_inst,address_t addr)
+{
+	//handle the previous write->spinning read sync
+	ProcessSRLSync(curr_thd_id,curr_inst);
+	//if there are shared location modification in called function
+	// if(loop_db_->SpinReadCalledFuncThread(curr_thd_id)) {
+	// 	//not spinning read
+	// 	if(loop_db_->SpinReadThread(curr_thd_id) && 
+	// 		loop_db_->GetSpinReadAddr(curr_thd_id)==addr) {
+	// 		loop_db_->SetSpinReadCalledFunc(curr_thd_id,NULL,false);
+	// 		//remove the potential spinning read meta
+	// 		loop_db_->RemoveSpinReadMeta(curr_thd_id);			
+	// 	}
+	// }
+
+	//if there are shared location modification in spinning read loop
+	//this spinning read loop is invalid
+	if(loop_db_->SpinReadThread(curr_thd_id)) {
+		if(loop_db_->SpinReadCalledFuncThread(curr_thd_id))
+			loop_db_->SetSpinReadCalledFunc(curr_thd_id,NULL,false);
+		//remove the potential spinning read meta
+		loop_db_->RemoveSpinReadMeta(curr_thd_id);			
+	}
+}
+ 
+void Detector::ProcessCWLCalledFuncWrite(thread_t curr_thd_id,address_t addr)
 {
 	if(cond_wait_db_->CondWaitCalledFuncThread(curr_thd_id)) {
 		if(cond_wait_db_->CondWaitMetaThread(curr_thd_id) &&
@@ -1038,9 +1078,8 @@ void Detector::ProcessCondWaitCalledFuncWrite(thread_t curr_thd_id,
 		}
 	}
 }
-
-void Detector::ProcessLockSignalWrite(thread_t curr_thd_id,
-	address_t addr)
+ 
+void Detector::ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr)
 {
 	INFO_FMT_PRINT("=========process lock signal write=========\n");
 	//current thread should be protected by at least one lock
@@ -1051,26 +1090,24 @@ void Detector::ProcessLockSignalWrite(thread_t curr_thd_id,
 	cond_wait_db_->AddLockSignalWriteMeta(curr_thd_id,
 		*curr_vc_map_[curr_thd_id],addr,lk_addr);
 }
-
-bool Detector::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
-	address_t addr)
+ 
+bool Detector::ProcessCWLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr)
 {
 	std::string file_name=curr_inst->GetFileName();
 	size_t found=file_name.find_last_of("/");
 	file_name=file_name.substr(found+1);
 	int line=curr_inst->GetLine();
-	return ProcessCondWaitRead(curr_thd_id,curr_inst,addr,file_name,line);
+	return ProcessCWLRead(curr_thd_id,curr_inst,addr,file_name,line);
 }
-
-bool Detector::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
+ 
+bool Detector::ProcessCWLRead(thread_t curr_thd_id,Inst *curr_inst,
 	address_t addr,std::string &file_name,int line)
 {
 	return cond_wait_db_->ProcessCondWaitRead(curr_thd_id,curr_inst,
 		*curr_vc_map_[curr_thd_id],addr,file_name,line);
 }
 
-void Detector::ProcessSignalCondWaitSync(thread_t curr_thd_id,
-	Inst *curr_inst)
+void Detector::ProcessCWLSync(thread_t curr_thd_id,Inst *curr_inst)
 {
 	cond_wait_db_->ProcessSignalCondWaitSync(curr_thd_id,curr_inst,
 		*curr_vc_map_[curr_thd_id]);

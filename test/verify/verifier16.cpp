@@ -2,7 +2,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 using namespace std;
-
+//test for group 
 int global=0;
 pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
 

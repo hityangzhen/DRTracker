@@ -62,19 +62,16 @@ void PreGroup::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 
 inline void PreGroup::RecordPStmtLogicalTime(thread_t curr_thd_id,Inst *inst)
 {
-	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
-	int line=inst->GetLine();
-	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
-	SortedPStmt *sorted_pstmt=dynamic_cast<SortedPStmt*>(pstmt);
-	if(sorted_pstmt==NULL)
+	PStmt *pstmt=prace_db_->GetPStmt(inst->GetFileName().c_str(),inst->GetLine());
+	if(pstmt==NULL)
 		return ;
+	//directly type cast
+	SortedPStmt *sorted_pstmt=(SortedPStmt *)pstmt;
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	VectorClock &vc=sorted_pstmt->GetVectorClock();
 	//first access the stmt or dfferent vector clock 
-	if(!vc.Equal(curr_vc)) {
-		sorted_pstmt->SetVectorClock(*curr_vc_map_[curr_thd_id]);
+	if(vc.GetClock(curr_thd_id)!=curr_vc->GetClock(curr_thd_id)) {
+		sorted_pstmt->JoinVectorClock(curr_vc);
 		sorted_pstmt->SetExecCount(thd_ec_map_[curr_thd_id]++);
 	}
 }

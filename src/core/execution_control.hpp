@@ -232,13 +232,29 @@ protected:
  	std::map<OS_THREAD_ID,thread_t> os_tid_map_;
  	std::map<pthread_t,thread_t> pthread_handle_map_;
  	//potential race statements
- 	std::tr1::unordered_set<std::string> static_profile_;
- 	std::tr1::unordered_set<std::string> instrumented_lines_;
+ 	std::vector<std::string> static_profile_;
+ 	std::tr1::unordered_set<uint64> instrumented_lines_;
  	
  	static ExecutionControl *ctrl_;
  private:
  	void InstrumentStartupFunc(IMG img);
  	bool FilterNonPotentialInstrument(std::string &filename,INT32 &line,INS ins);
+
+ 	uint64 FilenameAndLineHash(std::string &file_name,int line) {
+		uint64 key=0;
+		for(size_t i=0;i<file_name.size();i++)
+			key += file_name[i];
+		key += line;
+		return key;
+	}
+	uint64 FilenameAndLineHash(const char *file_name,int line) {
+		uint64 key=0;
+		const char *ch=file_name;
+		while(*ch)
+			key += *ch++;
+		key += line;
+		return key;
+	}
 
  	static void __Main(THREADID tid,CONTEXT *ctxt);
  	static void __ThreadMain(THREADID ,CONTEXT *ctxt);

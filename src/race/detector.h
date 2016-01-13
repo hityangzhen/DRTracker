@@ -247,16 +247,16 @@ protected:
     std::set<AdhocSync::ReadMeta *> &result);
 
   //spinning read wrapper functions
-  void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
+  void ProcessSRLSync(thread_t curr_thd_id,Inst *curr_inst);
+  void ProcessSRLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr);
+  void ProcessSRLWrite(thread_t curr_thd_id,Inst *curr_inst,address_t addr);
   //cond_wait wrapper functions
   void ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr);
-  bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
-    address_t addr);
-  bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
-    address_t addr,std::string &file_name,int line);
-  void ProcessCondWaitCalledFuncWrite(thread_t curr_thd_id,
-    address_t addr);
-  void ProcessSignalCondWaitSync(thread_t curr_thd_id,Inst *curr_inst);
+  bool ProcessCWLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr);
+  bool ProcessCWLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr,
+    std::string &file_name,int line);
+  void ProcessCWLCalledFuncWrite(thread_t curr_thd_id,address_t addr);
+  void ProcessCWLSync(thread_t curr_thd_id,Inst *curr_inst);
 
 	Mutex *internal_lock_;
 	RaceDB *race_db_;

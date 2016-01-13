@@ -711,8 +711,8 @@ INFO_FMT_PRINT("========process read or write,curr_thd_id:[%lx],inst:[%s],addr:[
 
 	//get the potential statement
 	std::string file_name=inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=inst->GetLine();
 
 	//process cond_wait loop
@@ -1510,8 +1510,8 @@ bool Verifier::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
 	address_t addr)
 {
 	std::string file_name=curr_inst->GetFileName();
-	size_t found=file_name.find_last_of("/");
-	file_name=file_name.substr(found+1);
+	// size_t found=file_name.find_last_of("/");
+	// file_name=file_name.substr(found+1);
 	int line=curr_inst->GetLine();
 	return ProcessCondWaitRead(curr_thd_id,curr_inst,addr,file_name,line);
 }

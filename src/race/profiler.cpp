@@ -38,8 +38,8 @@ void Profiler::HandlePreSetup()
 	// acculock_analyzer_=new AccuLock();
 	// acculock_analyzer_->Register();
 
-	// multilock_hb_analyzer_=new MultiLockHb();
-	// multilock_hb_analyzer_->Register();
+	multilock_hb_analyzer_=new MultiLockHb();
+	multilock_hb_analyzer_->Register();
 
 	// simple_lock_analyzer_=new SimpleLock();
 	// simple_lock_analyzer_->Register();
@@ -59,8 +59,8 @@ void Profiler::HandlePreSetup()
 	// verifier_ml_analyzer_=new VerifierMl();
 	// verifier_ml_analyzer_->Register();
 
-	pre_group_analyzer_=new PreGroup();
-	pre_group_analyzer_->Register();	
+	// pre_group_analyzer_=new PreGroup();
+	// pre_group_analyzer_->Register();	
 	//==============================end============================	
 }
 
@@ -120,10 +120,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(acculock_analyzer_);
 	// }
 
-	// if(multilock_hb_analyzer_->Enabled()) {
-	// 	multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(multilock_hb_analyzer_);
-	// }
+	if(multilock_hb_analyzer_->Enabled()) {
+		multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(multilock_hb_analyzer_);
+	}
 
 	// if(simple_lock_analyzer_->Enabled()) {
 	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
@@ -158,11 +158,11 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_ml_analyzer_);
 	// }
 
-	if(pre_group_analyzer_->Enabled()) {
-		LoadPStmts2();
-		pre_group_analyzer_->Setup(CreateMutex(),prace_db_);
-		AddAnalyzer(pre_group_analyzer_);
-	}
+	// if(pre_group_analyzer_->Enabled()) {
+	// 	LoadPStmts2();
+	// 	pre_group_analyzer_->Setup(CreateMutex(),prace_db_);
+	// 	AddAnalyzer(pre_group_analyzer_);
+	// }
 	//==============================end============================
 }
 
@@ -202,7 +202,7 @@ void Profiler::HandleProgramExit()
 
 	//save race report
 	race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
-
+	
 	delete race_db_;
 	delete race_rp_;
 	//==============================end============================
@@ -211,9 +211,9 @@ void Profiler::HandleProgramExit()
 	// delete verifier_ml_analyzer_;
 	// delete prace_db_;
 
-	pre_group_analyzer_->Export();
-	delete pre_group_analyzer_;
-	delete prace_db_;
+	// pre_group_analyzer_->Export();
+	// delete pre_group_analyzer_;
+	// delete prace_db_;
 	//==============================end============================	
 }
 
@@ -224,7 +224,7 @@ void Profiler::LoadPStmts()
 	char buffer[100];
 	const char *delimit=" ", *fn=NULL, *l=NULL;
 	PStmt *pstmt=NULL;
-	for(std::tr1::unordered_set<std::string>::iterator iter=
+	for(std::vector<std::string>::iterator iter=
 		static_profile_.begin();iter!=static_profile_.end();
 		iter++) {
 		iter->copy(buffer,iter->size(),0);
@@ -247,7 +247,7 @@ void Profiler::LoadPStmts2()
 	char buffer[100];
 	const char *delimit=" ", *fn=NULL, *l=NULL;
 	PStmt *pstmt=NULL;
-	for(std::tr1::unordered_set<std::string>::iterator iter=
+	for(std::vector<std::string>::iterator iter=
 		static_profile_.begin();iter!=static_profile_.end();
 		iter++) {
 		iter->copy(buffer,iter->size(),0);

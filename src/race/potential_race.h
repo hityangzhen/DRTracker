@@ -31,7 +31,7 @@ public:
 		exec_count_=0;
 	}
 	~SortedPStmt() {}
-	void SetVectorClock(VectorClock &vc) { vc_=vc; }
+	void JoinVectorClock(VectorClock *vc) { vc_.Join(vc); }
 	void SetExecCount(uint64 ec) { exec_count_=ec; }
 	uint64 GetExecCount() { return exec_count_; }
 	VectorClock &GetVectorClock() { return vc_; }
@@ -41,7 +41,7 @@ public:
 
 class PRaceDB {
 public:
-	typedef std::tr1::unordered_map<std::string,PStmt *> PStmtSet;
+	typedef std::tr1::unordered_map<uint64,PStmt *> PStmtSet;
 	typedef std::tr1::unordered_set<PStmt *> PRlvStmtSet;
 	typedef std::tr1::unordered_map<PStmt *, PRlvStmtSet *> PStmtMap;
 	PRaceDB() {}
@@ -58,35 +58,39 @@ public:
 				delete iter->second;
 		}
 	}
-
+	//for find pstmt
 	PStmt *GetPStmt(std::string &fn,int l) {
-		std::stringstream ss;
-		ss<<l;
-		std::string str(fn+ss.str());
-		if(pstmt_set_.find(str)!=pstmt_set_.end())
-			return pstmt_set_[str];
+		uint64 key=FilenameAndLineHash(fn,l);
+		if(pstmt_set_.find(key)!=pstmt_set_.end())
+			return pstmt_set_[key];
 		return NULL;
 	}
-
+	PStmt *GetPStmt(const char *fn,int l) {
+		uint64 key=FilenameAndLineHash(fn,l);
+		if(pstmt_set_.find(key)!=pstmt_set_.end())
+			return pstmt_set_[key];
+		return NULL;
+	}
+	//for load pstmt
 	PStmt *GetPStmt(const char *fn,const char *l) {
-		std::string str=std::string(fn)+l;
-		if(pstmt_set_.find(str)!=pstmt_set_.end())
-			return pstmt_set_[str];
+		uint64 key=FilenameAndLineHash(fn,atoi(l));
+		if(pstmt_set_.find(key)!=pstmt_set_.end())
+			return pstmt_set_[key];
 		return NULL;	
 	}
 
 	PStmt *GetPStmtAndCreate(const char *fn,const char *l) {
-		std::string str=std::string(fn)+l;
-		if(pstmt_set_.find(str)==pstmt_set_.end())
-			pstmt_set_[str]=new PStmt(fn,l);
-		return pstmt_set_[str];
+		uint64 key=FilenameAndLineHash(fn,atoi(l));
+		if(pstmt_set_.find(key)==pstmt_set_.end())
+			pstmt_set_[key]=new PStmt(fn,l);
+		return pstmt_set_[key];
 	}
 
 	PStmt *GetSortedPStmtAndCreate(const char *fn,const char *l) {
-		std::string str=std::string(fn)+l;
-		if(pstmt_set_.find(str)==pstmt_set_.end())
-			pstmt_set_[str]=new SortedPStmt(fn,l);
-		return pstmt_set_[str];
+		uint64 key=FilenameAndLineHash(fn,atoi(l));
+		if(pstmt_set_.find(key)==pstmt_set_.end())
+			pstmt_set_[key]=new SortedPStmt(fn,l);
+		return pstmt_set_[key];
 	}	
 
 	void BuildRelationMapping(PStmt *first_pstmt,const char *fn,const char *l) {
@@ -160,8 +164,11 @@ public:
 					<<sorted_pstmt2->line_<<" "
 					<<sorted_pstmt2->vc_.OutputString()<<" "
 					<<sorted_pstmt2->exec_count_<<std::endl;
-				//remove a pair after export
-				pstmt_map_[(PStmt*)sorted_pstmt2]->erase((PStmt*)sorted_pstmt1);
+				//different pstmt
+				if(sorted_pstmt1!=sorted_pstmt2) {
+					//remove a pair after export
+					pstmt_map_[(PStmt*)sorted_pstmt2]->erase((PStmt*)sorted_pstmt1);
+				}
 				// unordered_set erase is likely as the ordered container
 				iiter=iter->second->erase(iiter);
 			}
@@ -170,6 +177,23 @@ public:
 		out.close();
 	}
 private:
+
+	uint64 FilenameAndLineHash(std::string &file_name,int line) {
+		uint64 key=0;
+		for(size_t i=0;i<file_name.size();i++)
+			key += file_name[i];
+		key += line;
+		return key;
+	}
+	uint64 FilenameAndLineHash(const char *file_name,int line) {
+		uint64 key=0;
+		const char *ch=file_name;
+		while(*ch)
+			key += *ch++;
+		key += line;
+		return key;
+	}
+
 	PStmtMap pstmt_map_;
 	PStmtSet pstmt_set_;
 };

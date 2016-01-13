@@ -1,5 +1,5 @@
-#ifndef __PRE_GROUP_H
-#define __PRE_GROUP_H
+#ifndef __RACE_PRE_GROUP_H
+#define __RACE_PRE_GROUP_H
 
 //record the logical time of stmt to make preparation for group
 
