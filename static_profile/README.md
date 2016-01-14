@@ -42,3 +42,14 @@
 > **input: static\_profile\_\*.out**
 
 > **output: static\_profile\_\*\_group dir which contains g\*.out files**
+
+####convert.py rewrite the program source which use the macro #line N
+> **input: program source files which named \*.c and \*.h**
+> 
+> **output: rewrited program source files which named \*\_x.c and \*\_x.h and use the blank line to replace macro #line N**
+
+####group.py group the result of the static profile to make preparations for multigroup verification
+> **input: result of pre_group analysis which named sorted\_static\_profile\_\*.out**
+> 
+> **output: static\_profile\_\*\_group dir which contains the non-interferent potential racing stmt pairs and each group file named g\*.out**
+
