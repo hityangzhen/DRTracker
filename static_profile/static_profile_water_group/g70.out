@@ -1,7 +1,0 @@
-initia_x.c 161 cshift_x.c 61
-initia_x.c 162 cshift_x.c 58
-initia_x.c 126 cshift_x.c 62
-cshift_x.c 60 initia_x.c 202
-poteng_x.c 80 interf_x.c 174
-interf_x.c 186 poteng_x.c 81
-initia_x.c 127 syscons_x.c 79
