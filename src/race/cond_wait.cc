@@ -67,7 +67,7 @@ void CondWaitDB::AddLockSignalWriteMeta(thread_t thd_id,VectorClock &vc,
 			//we ignore the write in signal unlock scope
 			if(lsmeta->signal_unlock)
 				return ;
-			INFO_FMT_PRINT("==========add lock signal write meta==========\n");
+			// INFO_FMT_PRINT("==========add lock signal write meta==========\n");
 			//equal or smaller
 			DEBUG_ASSERT(lsmeta->vc.HappensBefore(&vc)==true);
 			//pop back and free
@@ -221,7 +221,7 @@ bool CondWaitDB::CondWaitCalledFunc(Inst *inst)
 void CondWaitDB::RemoveUnactivedLockWritesMeta(thread_t curr_thd_id,
 	address_t lk_addr)
 {
-	INFO_FMT_PRINT("===========remove unactived lock writes meta==========");
+	// INFO_FMT_PRINT("===========remove unactived lock writes meta==========");
 	//
 	if(thd_lsmetas_map_.find(curr_thd_id)==thd_lsmetas_map_.end())
 		return ;
@@ -244,7 +244,9 @@ void CondWaitDB::RemoveUnactivedLockWritesMeta(thread_t curr_thd_id,
 		return ;	
 	}
 	LockWritesMeta *lk_wrs_meta=lsmeta->lk_wrs_metas.back();
-	DEBUG_ASSERT(lk_wrs_meta->lock_addr==lk_addr);
+	// DEBUG_ASSERT(lk_wrs_meta->lock_addr==lk_addr);
+	if(lk_wrs_meta->lock_addr!=lk_addr)
+		return ;
 	lsmeta->lk_wrs_metas.pop_back();
 	delete lk_wrs_meta;
 	//if no remainder lock writes meta
@@ -263,11 +265,17 @@ void CondWaitDB::RemoveUnactivedLockWritesMeta(thread_t curr_thd_id,
 
 void CondWaitDB::ActiveLockSignalMeta(thread_t curr_thd_id)
 {
+	// INFO_FMT_PRINT("===========active lock signal meta start\n");
 	//get the current lock signal meta
+	if(thd_lsmetas_map_.find(curr_thd_id)==thd_lsmetas_map_.end())
+		return ;
 	LockSignalMetaDeque *lsmetas=thd_lsmetas_map_[curr_thd_id];
+	if(lsmetas->empty())
+		return ;
 	LockSignalMeta *lsmeta=lsmetas->back();
 	lsmeta->actived=true;
 	lsmeta->signal_unlock=true;
+	// INFO_FMT_PRINT("===========active lock signal meta end\n");
 }
 
 address_t CondWaitDB::GetCondWaitMetaAddr(thread_t thd_id)
@@ -295,7 +303,9 @@ bool CondWaitDB::LoadCondWait(const char *file_name)
 		sl=strtok(NULL,delimit);
 		el=strtok(NULL,delimit);
 
-		DEBUG_ASSERT(fn && psl && pel && sl && el);
+		// DEBUG_ASSERT(fn && psl && pel && sl && el);
+		if(!fn)
+			continue ;
 		std::string fn_str(fn);
 		if(cwloop_map_.find(fn_str)==cwloop_map_.end())
 			cwloop_map_[fn_str]=new CondWaitLoopTable;
@@ -329,7 +339,7 @@ bool CondWaitDB::ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
 			lk_addr);
 		//find the relevant lock signal meta, build the cond_wait meta
 		if(lsmeta) {
-INFO_FMT_PRINT("============add cond wait meta============\n");
+// INFO_FMT_PRINT("============add cond wait meta============\n");
 			AddCondWaitMeta(curr_thd_id,lsmeta,curr_inst,addr);
 			SetCondWaitCallInst(curr_thd_id);
 			return true;

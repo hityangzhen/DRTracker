@@ -227,7 +227,7 @@ static int32_t fetch_and_add(volatile int32_t* ptr, int32_t val) {
 #define ATOMIC_LOAD(ptr) *((volatile int *)(ptr))
 
 //test thread id
-pthread_t id1;
+pthread_t test_id;
 
 static int test_num=0;
 typedef struct Test {
@@ -240,11 +240,12 @@ static Test test[100];
 	test[test_num].f_=f; 													\
 	test[test_num++].id_=id 	
 
-#define TEST_CREATE(run) pthread_create(&id1,NULL,(HANDLER)run,NULL)
+#define TEST_CREATE(run) pthread_create(&test_id,NULL,(HANDLER)run,NULL)
+#define TEST_FINISH() pthread_join(test_id,NULL)
 #define TEST_RUN(i)															\
 	printf("[TEST%d]========================================\n",(i));		\
 	TEST_CREATE(run_##i);													\
-	PTHREAD_JOIN(1);														\
+	TEST_FINISH();															\
 	printf("[TEST%d]========================================\n\n",(i))
 
 #endif //__TEST_VERIFY_UNITTEST_H

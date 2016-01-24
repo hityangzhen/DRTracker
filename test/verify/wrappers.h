@@ -65,7 +65,7 @@ void *pthread_getspecific(pthread_key_t key) { return NULL; }
 int pthread_setspecific(pthread_key_t key, const void *value) { return 0; }
 
 int sched_yield() { return 0; }
-int assert(bool) { return 0; }
+
 
 int mkstemp(char *template) { return 0; }
 char *strdup(const char *s1) { return NULL; }
@@ -76,16 +76,6 @@ DIR *opendir(const char *name) { return NULL; }
 void *mmap(void *addr, size_t length, int prot, int flags,
 	int fd, off_t offset) { return NULL; }
 int munmap(void *addr, size_t length) { return 0; }
-
-
-//lf_queue
-int lf_queue_init(lf_queue *queue, key_t shm_key, int32_t unit_size, 
-	int32_t max_unit_num)
-{  return 0; }
-int lf_queue_push(lf_queue queue, void *unit) { return 0; }
-int lf_queue_pop(lf_queue queue, void *unit) { return 0; }
-int lf_queue_len(lf_queue queue) { return 0; }
-void lf_queue_free(lf_queue* queue) {  }
 
 #endif
 

@@ -94,5 +94,12 @@ void log_fini()
 	//do nothing
 	stdoutLogFile->Close();
 	stderrLogFile->Close();
+
+	delete printLock;
+	delete stdoutLogFile;
+	delete stderrLogFile;
+	delete assertLog;
+	delete debugLog;
+	delete infoLog;
 }
 

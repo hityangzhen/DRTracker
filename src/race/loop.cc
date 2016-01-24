@@ -154,7 +154,9 @@ bool LoopDB::LoadSpinReads(const char *file_name)
 		pel=strtok(NULL,delimit);
 		sl=strtok(NULL,delimit);
 		el=strtok(NULL,delimit);
-		DEBUG_ASSERT(fn && psl && pel && sl && el);
+		// DEBUG_ASSERT(fn && psl && pel && sl && el);
+		if(!fn)
+			continue ;
 		std::string fn_str(fn);
 		if(loop_map_.find(fn_str)==loop_map_.end()) 
 			loop_map_[fn_str]=new LoopTable;
@@ -212,21 +214,43 @@ void LoopDB::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst,
 {
 	if(spin_rdmeta_table_.find(curr_thd_id)==spin_rdmeta_table_.end())
 		return ;
-INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",curr_thd_id);
+// INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",curr_thd_id);
 	SpinReadMeta *rdmeta=spin_rdmeta_table_[curr_thd_id];
 	DEBUG_ASSERT(rdmeta);
 
 	Inst *lastest_rdinst=rdmeta->spin_rdinst;
+	Inst *lastest_callinst=rdmeta->spin_callinst;
 	std::string file_name=lastest_rdinst->GetFileName();
 	// size_t found=file_name.find_last_of("/");
 	// file_name=file_name.substr(found+1);
 
 	//lastest loop
 	Loop *loop=NULL;
+	//if the spinning read is in the called function,we ignore the operations
+	//in called function
+	if(loop_map_.find(file_name)==loop_map_.end())
+		return ;
+	//if the spinning read is in the called function, and there exists another
+	//spinning read loop in the called function
 	if(loop_map_[file_name]->find(lastest_rdinst->GetLine())==
 		loop_map_[file_name]->end()) {
-		if(rdmeta->spin_callinst)
-			loop=(*loop_map_[file_name])[rdmeta->spin_callinst->GetLine()];	
+		if(lastest_callinst) {
+			//get the called inst filename
+			file_name=lastest_callinst->GetFileName();
+			if(loop_map_.find(file_name)==loop_map_.end() ||
+				loop_map_[file_name]->find(lastest_callinst->GetLine())==
+				loop_map_[file_name]->end())
+				return ;
+			loop=(*loop_map_[file_name])[lastest_callinst->GetLine()];
+		}
+		else
+			return ;
+		// if(lastest_callinst==NULL || 
+		// 	loop_map_[file_name]->find(lastest_callinst->GetLine())==
+		// 	loop_map_[file_name]->end())
+		// 	return ;
+		// else
+		// 	loop=(*loop_map_[file_name])[lastest_callinst->GetLine()];
 	}
 	else
 		loop=(*loop_map_[file_name])[lastest_rdinst->GetLine()];

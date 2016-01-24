@@ -232,7 +232,6 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	if(adhoc_sync_) {
 		wr_meta=ProcessAdhocRead(curr_thd_id,inst,start_addr,end_addr,rd_metas);
 	}
-
 	// if wr_meta exists, which indidates this read is the last read in loop
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr += unit_size_) {
 		Meta *meta=GetMeta(iaddr);
@@ -1000,7 +999,7 @@ AdhocSync::WriteMeta *Detector::ProcessAdhocRead(thread_t curr_thd_id,Inst *rd_i
 			if(iter->first<=line)
 				break;
 		if(iter->second.InLoop(line)) {
-INFO_PRINT("=================loop read==============\n");
+// INFO_PRINT("=================loop read==============\n");
 			wr_meta=adhoc_sync_->WriteReadSync(curr_thd_id,rd_inst,start_addr,
 				end_addr);
 			if(wr_meta) {
@@ -1081,7 +1080,7 @@ void Detector::ProcessCWLCalledFuncWrite(thread_t curr_thd_id,address_t addr)
  
 void Detector::ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr)
 {
-	INFO_FMT_PRINT("=========process lock signal write=========\n");
+	// INFO_FMT_PRINT("=========process lock signal write=========\n");
 	//current thread should be protected by at least one lock
 	address_t lk_addr=0;
 	if((lk_addr=cond_wait_db_->GetLastestLock(curr_thd_id))==0)

@@ -86,7 +86,15 @@ private:
 class StaticInfo {
 public:
 	explicit StaticInfo(Mutex *lock);
-	~StaticInfo() {}
+	~StaticInfo() {
+		delete lock_;
+		for(ImageMap::iterator iter=image_map_.begin();
+			iter!=image_map_.end();iter++)
+			delete iter->second;
+		for(InstMap::iterator iter=inst_map_.begin();
+			iter!=inst_map_.end();iter++)
+			delete iter->second;
+	}
 
 	Image *CreateImage(const std::string &name);
 	Inst *CreateInst(Image *image,address_t offset);

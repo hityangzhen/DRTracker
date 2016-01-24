@@ -11,6 +11,16 @@ ExecutionControl::ExecutionControl()
 	main_thread_started_(false),main_thd_id_(INVALID_THD_ID)
 	{}
 
+ExecutionControl::~ExecutionControl()
+{
+	delete kernel_lock_;
+	delete knob_;
+	delete debug_analyzer_;
+	if(callstack_info_)
+		delete callstack_info_;
+	delete sinfo_;
+}
+
 void ExecutionControl::Initialize()
 {
 	log_init(CreateMutex());

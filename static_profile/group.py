@@ -94,7 +94,7 @@ def sort_group():
 	sort the group according to the group size
 	"""
 	def size_compare(g1,g2):
-		return -(len(g1)-len(g2))
+		return len(g1)-len(g2)
 	groups.sort(size_compare)
 
 def valid_group(group,pstmtpair2):
@@ -145,7 +145,8 @@ def group(infile_name):
 
 def export(outfile_name):
 	"""
-	export each group pstmt pairs into files
+	export each group pstmt pairs into static profile files, named s*.out
+	export each group pstmts into instrumented lines files, named i*.out
 	"""
 	# remove the older dir and files
 	if not os.path.exists(outfile_name):
@@ -157,14 +158,26 @@ def export(outfile_name):
 		outfile_name.append('/')
 
 	for id,g in enumerate(groups):
-		outfile=open(outfile_name+'g'+str(id)+'.out','w')
-		lines=[]
+		s_outfile=open(outfile_name+'s'+str(id)+'.out','w')
+		i_outfile=open(outfile_name+'i'+str(id)+'.out','w')
+		i_lines=set()
+		s_lines=[]
 		for pp in g:
+			# potential racing stmt pair line
 			s='%s %s %s %s\n' % (pp.pstmt1_.fn_,pp.pstmt1_.l_,
 				pp.pstmt2_.fn_,pp.pstmt2_.l_)
-			lines.append(s)
-		outfile.writelines(lines)
-		outfile.close()
+			s_lines.append(s)
+			# instrumented line
+			i='%s %s\n' % (pp.pstmt1_.fn_,pp.pstmt1_.l_)
+			i_lines.add(i)
+			i='%s %s\n' % (pp.pstmt2_.fn_,pp.pstmt2_.l_)
+			i_lines.add(i)
+
+		s_outfile.writelines(s_lines)
+		s_outfile.close()
+
+		i_outfile.writelines(i_lines)
+		i_outfile.close()
 
 if __name__=='__main__':
 	if len(sys.argv)!=3:

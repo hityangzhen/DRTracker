@@ -129,7 +129,7 @@
 class ExecutionControl {
 public:
 	ExecutionControl();
-	virtual ~ExecutionControl() {}
+	virtual ~ExecutionControl();
 
 	void Initialize();
 	void PreSetup();

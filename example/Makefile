@@ -1,18 +1,15 @@
-CXXFLAGS := -Werror -g -fno-omit-frame-pointer -pthread
+# Toplevel makefile for examples
+subdirs := $(wildcard */)
+subdirs_clean := $(subdirs:%/=%_clean)
 
-targets := $(basename $(wildcard *.cc))
+.PHONY: all clean $(subdirs) $(subdirs_clean)
 
-objs := $(targets:%=%.o)
+all: $(subdirs)
 
-.PHONY:all clean
+$(subdirs):
+	$(MAKE) -C $@
 
-all:$(targets)
+clean: $(subdirs_clean)
 
-$(targets):%:%.o
-	$(CXX)  $(CXXFLAGS) -o $@ $<
-
-$(objs):%.o:%.cc
-	$(CXX) -c $(CXXFLAGS) -o $@ $<
-
-clean:
-	rm -rf $(targets)
+$(subdirs_clean):
+	$(MAKE) -C $(patsubst %_clean,%,$@) clean

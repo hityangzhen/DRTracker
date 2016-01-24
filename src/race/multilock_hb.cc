@@ -239,7 +239,6 @@ void MultiLockHb::update_on_write(timestamp_t curr_clk,thread_t curr_thd,LockSet
 
 void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 {
-	// INFO_FMT_PRINT("==========process read:[%s]\n",inst->ToString().c_str());
 	MlMeta *ml_meta=dynamic_cast<MlMeta*>(meta);
 	DEBUG_ASSERT(ml_meta);
 	//process write->spinning read sync
@@ -270,7 +269,6 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		// }
 		ProcessCWLRead(curr_thd_id,inst,ml_meta->addr);
 	}
-
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	timestamp_t curr_clk=curr_vc->GetClock(curr_thd_id);	
 	if(curr_lockset_table_.find(curr_thd_id)==curr_lockset_table_.end() ||
@@ -320,7 +318,6 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 	//update race inst set if needed
 	if(track_racy_inst_)
 		ml_meta->race_inst_set.insert(inst);
-	//INFO_PRINT("process read end\n");
 }
 
 void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
