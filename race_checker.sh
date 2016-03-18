@@ -7,7 +7,7 @@ tool_path=/home/yiranyaoqiu/RaceChecker
 
 # pure dynamic data race detection
 /home/yiranyaoqiu/pin/pin -t $tool_path/build-debug/race_profiler.so \
--enable_djit 1 -parallel_detector_number 1 -track_racy_inst 1 \
+-enable_djit 1 -parallel_detector_number 2 -track_racy_inst 1 \
 -ignore_lib 1 -enable_debug 1 -debug_pthread 1 -debug_mem 1 -debug_main 1 \
 -debug_pthread 1 -debug_malloc 1 -- test/test5
 

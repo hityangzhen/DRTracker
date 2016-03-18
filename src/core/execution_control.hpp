@@ -164,7 +164,6 @@
 	EVENT_CLASS(Name) *event=CREATE_EVENT(Name,__VA_ARGS__);					\
 	if(v) {																		\
 		EventBufferTable *buff_table=(EventBufferTable *)v;						\
-		INFO_PRINT("***********NONMEM EVENT "#Name" start*********\n");			\
 		for(EventBufferTable::iterator iter=buff_table->begin();				\
 			iter!=buff_table->end();iter++) {									\
 			EventBuffer *buff=iter->second;										\
@@ -178,7 +177,6 @@
 		event->increase_ref();													\
 		PushEventToDetectionDeque(iter->first,event);							\
 	} 																			\
-	INFO_PRINT("***********NONMEM EVENT "#Name" end*********\n");				\
 	} while(0)
 
 //The main controller for the dynamic program analysis.

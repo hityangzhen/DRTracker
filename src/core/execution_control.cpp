@@ -451,12 +451,14 @@ EventBase *ExecutionControl::GetEventBase(thread_t thd_id)
 //detector thread main function
 void ExecutionControl::CreateDetectionThread(VOID *v)
 {
+	LockKernel();
 	//get the thread_uid
 	thread_t curr_thd_id=PIN_ThreadUid();
 	//create the queue to preserve the event info
 	thd_deq_table_[curr_thd_id]=new EventDeque;
 	//each detection queue shuold be synchronized by a lock
 	thd_deqlk_table_[curr_thd_id]=CreateMutex();
+	UnlockKernel();
 	HandleCreateDetectionThread(curr_thd_id);
 }
 
@@ -479,7 +481,6 @@ void ExecutionControl::PushEventBufferToDetectionDeque(thread_t thd_uid,
 	//synchronize the queue of the detector
 	ScopedLock lock(thd_deqlk_table_[thd_uid]);
 	EventDeque *dtc_eb_deq=thd_deq_table_[thd_uid];
-	INFO_PRINT("=============push event buffer to=============\n");
 	while(!buff->Empty()) {
 		dtc_eb_deq->push_back(buff->Pop());
 	}
