@@ -11,8 +11,8 @@ void Profiler::HandlePreSetup()
 	knob_->RegisterStr("race_report","the output race report path","race.rp");
 
 	//======================data race detection=====================
-	// djit_analyzer_=new Djit;
-	// djit_analyzer_->Register();
+	djit_analyzer_=new Djit;
+	djit_analyzer_->Register();
 
 	// eraser_analyzer_=new Eraser();
 	// eraser_analyzer_->Register();
@@ -38,8 +38,8 @@ void Profiler::HandlePreSetup()
 	// acculock_analyzer_=new AccuLock();
 	// acculock_analyzer_->Register();
 
-	multilock_hb_analyzer_=new MultiLockHb();
-	multilock_hb_analyzer_->Register();
+	// multilock_hb_analyzer_=new MultiLockHb();
+	// multilock_hb_analyzer_->Register();
 
 	// simple_lock_analyzer_=new SimpleLock();
 	// simple_lock_analyzer_->Register();
@@ -74,11 +74,11 @@ void Profiler::HandlePostSetup()
 	race_rp_=new RaceReport(CreateMutex());
 	//======================data race detection=====================
 
-	// //add  data race detector
-	// if(djit_analyzer_->Enabled()) {
-	// 	djit_analyzer_->Setup(CreateMutex(),race_db_);
-	// 	AddAnalyzer(djit_analyzer_);
-	// }
+	//add  data race detector
+	if(djit_analyzer_->Enabled()) {
+		djit_analyzer_->Setup(CreateMutex(),race_db_);
+		AddAnalyzer(djit_analyzer_);
+	}
 
 	// if(eraser_analyzer_->Enabled()) {
 	// 	eraser_analyzer_->Setup(CreateMutex(),race_db_);
@@ -120,10 +120,10 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(acculock_analyzer_);
 	// }
 
-	if(multilock_hb_analyzer_->Enabled()) {
-		multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(multilock_hb_analyzer_);
-	}
+	// if(multilock_hb_analyzer_->Enabled()) {
+	// 	multilock_hb_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(multilock_hb_analyzer_);
+	// }
 
 	// if(simple_lock_analyzer_->Enabled()) {
 	// 	simple_lock_analyzer_->Setup(CreateMutex(),race_db_);
@@ -166,6 +166,17 @@ void Profiler::HandlePostSetup()
 	//==============================end============================
 }
 
+address_t Profiler::GetUnitSize()
+{
+	//get the detector unit_size
+	std::tr1::unordered_map<thread_t,Detector *>::iterator iter=
+		thd_dtc_map_.begin();
+	if(iter==thd_dtc_map_.end())
+		return 0;
+	//assume all the detector have the same unit size
+	return iter->second->GetUnitSize();
+}
+
 bool Profiler::HandleIgnoreMemAccess(IMG img)
 {
 	if(!IMG_Valid(img))
@@ -205,9 +216,27 @@ void Profiler::HandleProgramExit()
 	
 	delete race_db_;
 	delete race_rp_;
+
+	// delete eraser_analyzer_;
+	delete djit_analyzer_;
+	// delete helgrind_analyzer_;
+	// delete thread_sanitizer_analyzer_;
+	// delete fast_track_analyzer_;
+	// delete literace_analyzer_;
+	// delete loft_analyzer_;
+	// delete multilock_hb_analyzer_;
+	// delete acculock_analyzer_;
+	// delete simple_lock_analyzer_;
+	// delete simplelock_plus_analyzer_;
 	//==============================end============================
 
 	//======================data race verifier=====================
+	// delete verifier_analyzer_;
+	// delete prace_db_;
+
+	// delete verifier_sl_analyzer_;
+	// delete prace_db_;
+
 	// delete verifier_ml_analyzer_;
 	// delete prace_db_;
 	
@@ -215,6 +244,39 @@ void Profiler::HandleProgramExit()
 	// delete pre_group_analyzer_;
 	// delete prace_db_;
 	//==============================end============================	
+}
+
+void Profiler::HandleCreateDetectionThread(thread_t thd_id)
+{
+	//create a new detector for each detection thread
+	Detector *dtc=new Djit;
+	thd_dtc_map_[thd_id]=dtc;
+	dtc->Register();
+	if(dtc->Enabled())
+		dtc->Setup(CreateMutex(),race_db_);
+	//get the eventbase from the queue
+	while(true) {
+		EventBase *eb=GetEventBase(thd_id);
+		if(eb==NULL)
+			goto postponed;
+		else {
+			INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
+			Detector::EventHandle eh=dtc->GetEventHandle(eb->name());
+			if(eh==NULL)
+				goto postponed;
+			else {
+				(*eh)(dtc,eb); //execute the event handle
+				goto postponed;
+			}
+		}
+		postponed:
+			if(IsProcessExiting())
+				break;
+			// Yield();
+			Sleep(10);
+	}
+	delete dtc;
+	ExitThread(0);
 }
 
 void Profiler::LoadPStmts()

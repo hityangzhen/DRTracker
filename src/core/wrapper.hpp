@@ -188,6 +188,7 @@ private:
 
 #define ACTIVATE_NORET(NUM_ARGS) ACTIVATE(void,NUM_ARGS)				
 
+//each time the hooked function is revoked, will temporarily create a wrapper class
 #define REPLACED_FUNCTION(R,NUM_ARGS)									\
 	static R ReplacedFunction(THREADID tid,								\
 							  CONTEXT *ctxt,							\
@@ -337,7 +338,6 @@ protected:
 		wrappers_[wrapper->name()]=wrapper;
 		return wrapper;
 	}
-
 	template<typename W>
 	W *Find_(const std::string &name) {
 		WrapperMap::iterator it=wrappers_.find(name);
@@ -345,14 +345,12 @@ protected:
 			return NULL;
 		return dynamic_cast<W *>(it->second);
 	}
-
 	static WrapperFactory *GetInstance() {
 		if(!instance_) {
 			instance_=new WrapperFactory;
 		}
 		return instance_;
 	}
-
 	//A map between wrapper name and wrapper instance.
 	WrapperMap wrappers_;
 	//The singleton factory instance.
@@ -362,10 +360,7 @@ private:
 	DISALLOW_COPY_CONSTRUCTORS(WrapperFactory);
 };
 
-
 #define WRAPPER_CLASS(name) Wrapper##name
-
-
 
 #define WRAPPER(name_,func_,lib_,group_,sig_)							\
 	class WRAPPER_CLASS(name_): 										\

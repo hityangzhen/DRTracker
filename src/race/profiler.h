@@ -52,6 +52,8 @@ protected:
 	void HandlePostSetup();
 	bool HandleIgnoreMemAccess(IMG img);
 	void HandleProgramExit();
+	void HandleCreateDetectionThread(thread_t thd_id);
+	address_t GetUnitSize();
 	//======================data race detection=====================
 	RaceDB *race_db_;
 	RaceReport *race_rp_;
@@ -76,12 +78,14 @@ protected:
 	VerifierMl *verifier_ml_analyzer_;
 	PreGroup *pre_group_analyzer_;
 	//==============================end============================	
+
+
+	std::tr1::unordered_map<thread_t,Detector *> thd_dtc_map_;
 private:
 	void LoadPStmts();
 	void LoadPStmts2();
 	DISALLOW_COPY_CONSTRUCTORS(Profiler);
 };
-
 } //namespace race
 
 #endif

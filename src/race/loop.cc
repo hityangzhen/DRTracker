@@ -89,6 +89,12 @@ void LoopDB::SetSpinRelevantWriteThread(thread_t thd_id,thread_t wrthd_id)
 	spin_rdmeta_table_[thd_id]->spin_rlt_wrthd=wrthd_id;
 }
 
+void LoopDB::SetSpinRelevantWriteLocked(thread_t thd_id,bool locked)
+{
+	DEBUG_ASSERT(spin_rdmeta_table_[thd_id]);
+	spin_rdmeta_table_[thd_id]->spin_rlt_wrlocked=locked;
+}
+
 void LoopDB::SetSpinRelevantWriteThreadAndInst(thread_t thd_id,
 	thread_t wrthd_id,Inst *wrinst)
 {
@@ -145,7 +151,7 @@ bool LoopDB::LoadSpinReads(const char *file_name)
 	if(!in) return false;
 	const char *delimit=" ",*fn=NULL;
 	const char *psl=NULL,*pel=NULL;
-	const char *sl=NULL,*el=NULL,*ecl=NULL;
+	const char *sl=NULL,*el=NULL,*ecl=NULL,*enfl=NULL;
 	char buffer[200];
 	while(!in.eof()) {
 		in.getline(buffer,200,'\n');
@@ -170,6 +176,11 @@ bool LoopDB::LoadSpinReads(const char *file_name)
 				FilenameAndLineHash(fn_str,atoi(ecl)));
 			//add the mapping of ecl to loop
 			loop_map_[fn_str]->insert(std::make_pair(atoi(ecl),loop));
+
+			//add the global enfl index
+			enfl=strtok(NULL,delimit);
+			if(*enfl!='0')
+				en_first_line_set_.insert(FilenameAndLineHash(fn_str,atoi(enfl)));
 		}
 	}
 	in.close();
@@ -186,6 +197,20 @@ bool LoopDB::SpinRead(Inst *inst,RaceEventType type)
 	int line=inst->GetLine();
 	return exiting_cond_line_set_.find(FilenameAndLineHash(file_name,line))!=
 		exiting_cond_line_set_.end();
+}
+
+bool LoopDB::ExitingNodeFirstLine(Inst *inst)
+{
+	std::string file_name=inst->GetFileName();
+	int line=inst->GetLine();
+	return en_first_line_set_.find(FilenameAndLineHash(file_name,line))!=
+		en_first_line_set_.end(); 
+}
+
+bool LoopDB::ExitingNodeFirstLine(std::string &file_name,int line)
+{
+	return en_first_line_set_.find(FilenameAndLineHash(file_name,line))!=
+		en_first_line_set_.end();
 }
 
 bool LoopDB::SpinReadCalledFunc(Inst *inst)
@@ -214,7 +239,7 @@ void LoopDB::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst,
 {
 	if(spin_rdmeta_table_.find(curr_thd_id)==spin_rdmeta_table_.end())
 		return ;
-// INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",curr_thd_id);
+
 	SpinReadMeta *rdmeta=spin_rdmeta_table_[curr_thd_id];
 	DEBUG_ASSERT(rdmeta);
 
@@ -258,13 +283,17 @@ void LoopDB::ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst,
 	
 	thread_t spin_rlt_wrthd=rdmeta->spin_rlt_wrthd;
 	Inst *spin_rlt_wrinst=rdmeta->spin_rlt_wrinst;
-	
-	//if current inst still in loop region
-	if(spin_rlt_wrthd!=0 && (!curr_inst ||
+
+	//if current inst is in the exiting node or out of the loop
+	if(spin_rlt_wrthd!=0 && (!curr_inst || 
+		(loop->InLoop(curr_inst->GetLine()) && ExitingNodeFirstLine(curr_inst)) || 
 		loop->OutLoopInProcedure(curr_inst->GetLine()))) {
+		INFO_FMT_PRINT("===============process write read sync:[%lx]===============\n",curr_thd_id);
 		//construct write->read sync
 		curr_vc->Join(wrthd_vc);
-		wrthd_vc->Increment(spin_rlt_wrthd);
+		//write and spinning read are protected by the common lock
+		if(!rdmeta->spin_rlt_wrlocked)
+			wrthd_vc->Increment(spin_rlt_wrthd);
 		if(curr_inst) {
 INFO_FMT_PRINT("+++++++++++++++write->read sync,curr inst:[%s]++++++++++++++\n",curr_inst->ToString().c_str());
 		}
@@ -299,7 +328,7 @@ INFO_FMT_PRINT("+++++++++++++++computable loop,curr inst:[%s]++++++++++++++\n",c
 			spin_rdmeta_table_.erase(curr_thd_id);
 		}
 	}
-// INFO_PRINT("==============process write read sync end=============\n");
+INFO_PRINT("==============process write read sync end=============\n");
 }
 
 }//namespace

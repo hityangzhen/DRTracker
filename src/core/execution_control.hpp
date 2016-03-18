@@ -4,7 +4,7 @@
 #include <list>
 #include <map>
 #include <tr1/unordered_set>
-
+#include <deque>
 #include "pin.H"
 
 #include "core/basictypes.h"
@@ -17,6 +17,7 @@
 #include "core/pin_sync.hpp"
 #include "core/pin_knob.h"
 #include "core/wrapper.hpp"
+#include "event.h"
 
 //Define macros for calling analysis functions.
 #define CALL_ANALYSIS_FUNC(func,...)											\
@@ -85,6 +86,9 @@
 	static VOID I_ProgramExit(INT32 code,VOID *v) {								\
 		ctrl->ProgramExit(code,v);												\
 	}																			\
+	static VOID I_FiniUnlocked(INT32 code,VOID *v) {							\
+		ctrl->FiniUnlocked(code,v);												\
+	}																			\
 	static VOID I_ThreadStart(THREADID tid,										\
 		CONTEXT *ctxt,															\
 		INT32 flags,															\
@@ -109,8 +113,10 @@
 		IMG_AddUnloadFunction(I_ImageUnload,NULL);								\
 		PIN_AddContextChangeFunction(I_ContextChange,NULL);						\
 		PIN_AddFiniFunction(I_ProgramExit,NULL);								\
+		PIN_AddFiniUnlockedFunction(I_FiniUnlocked,NULL);						\
 		PIN_AddThreadStartFunction(I_ThreadStart,NULL);							\
 		PIN_AddThreadFiniFunction(I_ThreadExit,NULL);							\
+		ctrl->app_thd_key=PIN_CreateThreadDataKey(0);							\
 		I_ProgramStart();														\
 		PIN_StartProgram();														\
 	}																				
@@ -123,7 +129,57 @@
 		if(isalpha(buffer[0]))													\
 			(set).insert(std::string(buffer));									\
 	}																			\
-	in.close()																	
+	in.close()
+
+#define TLS_MAX_EVENT 10
+
+#define DISTRIBUTE_MEMORY_EVENT(Name,...) do {									\
+	address_t unit_size_=GetUnitSize();											\
+	thread_t thd_id=PIN_ThreadId();												\
+	VOID *v=PIN_GetThreadData(app_thd_key,thd_id);								\
+	DEBUG_ASSERT(v);															\
+	EventBufferTable *buff_table=(EventBufferTable *)v;							\
+	size_t prl_dtc_num=buff_table->size();										\
+	EventBufferTable::iterator iter;											\
+	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);						\
+	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);						\
+	for(address_t curr_addr=start_addr;curr_addr<end_addr;						\
+		curr_addr+=unit_size_) {												\
+		EVENT_CLASS(Name) *event=CREATE_EVENT(Name,__VA_ARGS__);				\
+		event->arg3_=curr_addr;													\
+		event->arg4_=unit_size_;												\
+		iter=buff_table->begin();												\
+		int index=(curr_addr/unit_size_)%prl_dtc_num;							\
+		std::advance(iter,index);												\
+		EventBuffer *buff=iter->second;											\
+		if(buff->Full())														\
+			PushEventBufferToDetectionDeque(iter->first,buff);					\
+		buff->Push(event);														\
+	} 																			\
+	} while(0)																
+
+#define DISTRIBUTE_NONMEM_EVENT(Name,...) do {									\
+	thread_t thd_id=PIN_ThreadId();												\
+	VOID *v=PIN_GetThreadData(app_thd_key,thd_id);								\
+	EVENT_CLASS(Name) *event=CREATE_EVENT(Name,__VA_ARGS__);					\
+	if(v) {																		\
+		EventBufferTable *buff_table=(EventBufferTable *)v;						\
+		INFO_PRINT("***********NONMEM EVENT "#Name" start*********\n");			\
+		for(EventBufferTable::iterator iter=buff_table->begin();				\
+			iter!=buff_table->end();iter++) {									\
+			EventBuffer *buff=iter->second;										\
+			if(!buff->Empty())													\
+				PushEventBufferToDetectionDeque(iter->first,buff);				\
+		}																		\
+	}																			\
+	event->decrease_ref();														\
+	for(EventDequeTable::iterator iter=thd_deq_table_.begin();					\
+		iter!=thd_deq_table_.end();iter++) {									\
+		event->increase_ref();													\
+		PushEventToDetectionDeque(iter->first,event);							\
+	} 																			\
+	INFO_PRINT("***********NONMEM EVENT "#Name" end*********\n");				\
+	} while(0)
 
 //The main controller for the dynamic program analysis.
 class ExecutionControl {
@@ -141,9 +197,20 @@ public:
 		const CONTEXT *from,CONTEXT *to,INT32 info,VOID *V);
 	void ProgramStart();
 	void ProgramExit(INT32 code,VOID *V);
+	void FiniUnlocked(INT32 code,VOID *v);
 	void ThreadStart(THREADID tid,CONTEXT *ctxt,INT32 FLAGS,VOID *v);
 	void ThreadExit(THREADID tid,const CONTEXT *ctxt,INT32 code,VOID *v);
-
+	//parallel detection
+	typedef std::deque<EventBase *> EventDeque;
+	typedef std::map<thread_t,EventDeque *> EventDequeTable;
+	typedef std::map<thread_t,Mutex *> EventDequeLockTable;
+	typedef std::map<thread_t,EventBuffer *> EventBufferTable;
+	void ParallelDetectionThread();	
+	void CreateDetectionThread(VOID *);
+	static void __CreateDetectionThread(VOID *v) {
+		ctrl_->CreateDetectionThread(v);
+	}
+	static TLS_KEY app_thd_key;
 protected:
 	typedef std::list<Analyzer *>AnalyzerContainer;
 
@@ -155,6 +222,7 @@ protected:
 	//Define wrapper handle functions.
 	virtual void HandlePreSetup();
 	virtual void HandlePostSetup();
+	virtual void HandleCreateDetectionThread(thread_t thd_id) {}
 	virtual bool HandleIgnoreInstCount(IMG) {return true;}
 	virtual bool HandleIgnoreMemAccess(IMG img) { return false; }
 	virtual void HandlePreInstrumentTrace(TRACE trace);
@@ -189,7 +257,6 @@ protected:
  	virtual void HandleBeforeWrapper(WrapperBase *wrapper);
   	virtual void HandleAfterWrapper(WrapperBase *wrapper);
 
-
   	void LockKernel() { kernel_lock_->Lock(); }
   	void UnlockKernel() { kernel_lock_->Unlock(); }
   	void Abort(const std::string &msg);
@@ -206,6 +273,12 @@ protected:
   	void ReplacePthreadCreateWrapper(IMG img);
   	void ReplacePthreadWrappers(IMG img);
   	void ReplaceMallocWrappers(IMG img);
+
+  	EventBase *GetEventBase(thread_t thd_id);
+  	virtual address_t GetUnitSize() { return 0; }
+  	void FreeEventBuffer();
+  	void PushEventBufferToDetectionDeque(thread_t thd_uid,EventBuffer *buff);
+  	void PushEventToDetectionDeque(thread_t thd_uid,EventBase *eb);
 
   	Mutex *kernel_lock_;
  	Knob *knob_;
@@ -234,8 +307,11 @@ protected:
  	//potential race statements
  	std::vector<std::string> static_profile_;
  	std::tr1::unordered_set<uint64> instrumented_lines_;
- 	
+ 	//detection thread queue
+ 	EventDequeTable thd_deq_table_;
+ 	EventDequeLockTable thd_deqlk_table_;
  	static ExecutionControl *ctrl_;
+
  private:
  	void InstrumentStartupFunc(IMG img);
  	bool FilterNonPotentialInstrument(std::string &filename,INT32 &line,INS ins);
@@ -277,7 +353,6 @@ protected:
   	static void __AfterReturn(THREADID tid, Inst *inst, ADDRINT target);
 
   	DISALLOW_COPY_CONSTRUCTORS(ExecutionControl);
-
 
   	//Declare wrapper handlers.
   	DECLARE_WRAPPER_HANDLER(PthreadCreate);

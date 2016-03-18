@@ -1,10 +1,11 @@
 #include "race/detector.h"
-#include "core/log.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
 
 namespace race {
+
+std::map<std::string,Detector::EventHandle> Detector::event_handle_table_;
 
 Detector::Detector():internal_lock_(NULL),race_db_(NULL),unit_size_(4),
 	filter_(NULL),vc_mem_size_(0),adhoc_sync_(NULL),loop_db_(NULL),
@@ -137,6 +138,54 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 			cond_wait_db_=NULL;
 		}
 	}
+	//parallelize the detection 
+	if(knob_->ValueInt("parallel_detector_number")>0) {
+		REGISTER_EVENT_HANDLE(ImageLoad);
+		REGISTER_EVENT_HANDLE(ImageUnload);
+		REGISTER_EVENT_HANDLE(ThreadStart);
+		REGISTER_EVENT_HANDLE(ThreadExit);
+		REGISTER_EVENT_HANDLE(BeforeMemRead);
+		REGISTER_EVENT_HANDLE(BeforeMemWrite);
+		REGISTER_EVENT_HANDLE(BeforeAtomicInst);
+		REGISTER_EVENT_HANDLE(AfterAtomicInst);
+		REGISTER_EVENT_HANDLE(AfterPthreadCreate);
+		REGISTER_EVENT_HANDLE(BeforePthreadJoin);
+		REGISTER_EVENT_HANDLE(AfterPthreadJoin);
+		REGISTER_EVENT_HANDLE(BeforeCall);
+		REGISTER_EVENT_HANDLE(AfterCall);
+		REGISTER_EVENT_HANDLE(BeforeReturn);
+		REGISTER_EVENT_HANDLE(AfterReturn);
+		REGISTER_EVENT_HANDLE(BeforePthreadMutexTryLock);
+		REGISTER_EVENT_HANDLE(BeforePthreadMutexLock);
+		REGISTER_EVENT_HANDLE(AfterPthreadMutexLock);
+		REGISTER_EVENT_HANDLE(BeforePthreadMutexUnlock);
+		REGISTER_EVENT_HANDLE(AfterPthreadMutexTryLock);
+		REGISTER_EVENT_HANDLE(BeforePthreadRwlockRdlock);
+		REGISTER_EVENT_HANDLE(AfterPthreadRwlockRdlock);
+		REGISTER_EVENT_HANDLE(BeforePthreadRwlockWrlock);
+		REGISTER_EVENT_HANDLE(AfterPthreadRwlockWrlock);
+		REGISTER_EVENT_HANDLE(BeforePthreadRwlockUnlock);
+		REGISTER_EVENT_HANDLE(BeforePthreadRwlockTryRdlock);
+		REGISTER_EVENT_HANDLE(AfterPthreadRwlockTryRdlock);
+		REGISTER_EVENT_HANDLE(BeforePthreadRwlockTryWrlock);
+		REGISTER_EVENT_HANDLE(AfterPthreadRwlockTryWrlock);
+		REGISTER_EVENT_HANDLE(BeforePthreadCondSignal);
+		REGISTER_EVENT_HANDLE(BeforePthreadCondBroadcast);
+		REGISTER_EVENT_HANDLE(BeforePthreadCondWait);
+		REGISTER_EVENT_HANDLE(AfterPthreadCondWait);
+		REGISTER_EVENT_HANDLE(BeforePthreadCondTimedwait);
+		REGISTER_EVENT_HANDLE(AfterPthreadCondTimedwait);
+		REGISTER_EVENT_HANDLE(AfterMalloc);
+		REGISTER_EVENT_HANDLE(AfterCalloc);
+		REGISTER_EVENT_HANDLE(BeforeRealloc);
+		REGISTER_EVENT_HANDLE(AfterRealloc);
+		REGISTER_EVENT_HANDLE(BeforeFree);
+		REGISTER_EVENT_HANDLE(BeforePthreadBarrierWait);
+		REGISTER_EVENT_HANDLE(AfterPthreadBarrierWait);
+		REGISTER_EVENT_HANDLE(BeforeSemPost);
+		REGISTER_EVENT_HANDLE(BeforeSemWait);
+		REGISTER_EVENT_HANDLE(AfterSemWait);
+	}
 }
 
 void Detector::ImageLoad(Image *image, address_t low_addr, address_t high_addr,
@@ -167,7 +216,7 @@ void Detector::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 {
 	//create thread local vector clock and lockset
 	VectorClock *curr_vc=new VectorClock;
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	//init vector clock
 	curr_vc->Increment(curr_thd_id);
 	if(parent_thd_id!=INVALID_THD_ID) {
@@ -184,7 +233,7 @@ void Detector::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 
 void Detector::ThreadExit(thread_t curr_thd_id,timestamp_t curr_thd_clk)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,NULL);
 	if(cond_wait_db_)
@@ -195,7 +244,7 @@ void Detector::BeforeMemRead(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	Inst *inst, address_t addr, size_t size)
 {
 	ReadInstCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(FilterAccess(addr))
 		return;
 	if(atomic_map_[curr_thd_id])
@@ -255,7 +304,7 @@ void Detector::BeforeMemWrite(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 	Inst *inst, address_t addr, size_t size)
 {
 	WriteInstCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(FilterAccess(addr))
 		return ;
 	if(atomic_map_[curr_thd_id])
@@ -301,7 +350,7 @@ void Detector::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,std::string type, address_t addr)
 {
 	VolatileCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	atomic_map_[curr_thd_id]=true;
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -313,14 +362,14 @@ void Detector::BeforeAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::AfterAtomicInst(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 	Inst *inst,std::string type, address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	atomic_map_[curr_thd_id]=false;
 }
 
 void Detector::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,thread_t child_thd_id)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -330,12 +379,14 @@ void Detector::BeforePthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 	Inst *inst,thread_t child_thd_id)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
 	VectorClock *child_vc=curr_vc_map_[child_thd_id];
 	curr_vc->Join(child_vc);
 	curr_vc->Increment(curr_thd_id);
 	// remove the child thread vc
+	if(loop_db_ || cond_wait_db_)
+		return ;
 	delete curr_vc_map_[child_thd_id];
 	curr_vc_map_.erase(child_thd_id);		
 }
@@ -343,14 +394,14 @@ void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
 	Inst *inst,thread_t childThdId) 
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	curr_vc_map_[currThdId]->Increment(currThdId);
 }
 
 void Detector::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_) {
 		ProcessSRLSync(curr_thd_id,inst);	
 		//exiting condtion line called function	
@@ -374,7 +425,7 @@ void Detector::AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_) {
 		ProcessSRLSync(curr_thd_id,inst);		
 	}
@@ -384,7 +435,7 @@ void Detector::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_) {
 		loop_db_->RemoveSpinReadCalledFunc(curr_thd_id);
 	}
@@ -395,7 +446,7 @@ void Detector::AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Detector::BeforePthreadMutexTryLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -405,7 +456,7 @@ void Detector::BeforePthreadMutexTryLock(thread_t curr_thd_id,
 void Detector::BeforePthreadMutexLock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_) {
@@ -418,7 +469,7 @@ void Detector::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_thd_c
 	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_) == addr);
 	if(cond_wait_db_)
 		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
@@ -441,7 +492,7 @@ void Detector::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr_th
 	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
-  	ScopedLock locker(internal_lock_);
+  	ScopedLock locker(internal_lock_,knob_->ValueInt("parallel_detector_number"));
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -459,7 +510,7 @@ void Detector::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr_th
 void Detector::BeforePthreadRwlockRdlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -470,7 +521,7 @@ void Detector::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr_th
 	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_) == addr);
 	//?????
 	MutexMeta *meta=GetMutexMeta(addr);
@@ -481,7 +532,7 @@ void Detector::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr_th
 void Detector::BeforePthreadRwlockWrlock(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -492,7 +543,7 @@ void Detector::AfterPthreadRwlockWrlock(thread_t curr_thd_id,timestamp_t curr_th
 	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_) == addr);
 	if(cond_wait_db_)
 		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
@@ -504,7 +555,7 @@ void Detector::AfterPthreadRwlockWrlock(thread_t curr_thd_id,timestamp_t curr_th
 void Detector::BeforePthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -523,7 +574,7 @@ void Detector::AfterPthreadRwlockTryRdlock(thread_t curr_thd_id,timestamp_t curr
 void Detector::BeforePthreadRwlockTryWrlock(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -544,7 +595,7 @@ void Detector::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t curr_t
 	Inst *inst,address_t addr) 
 {
 	LockCountIncrease();
-  	ScopedLock lock(internal_lock_);
+  	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -563,7 +614,7 @@ void Detector::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t curr_t
 void Detector::BeforePthreadCondSignal(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -578,7 +629,7 @@ void Detector::BeforePthreadCondSignal(thread_t curr_thd_id,
 void Detector::BeforePthreadCondBroadcast(thread_t curr_thd_id,
     timestamp_t curr_thd_clk,Inst *inst, address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr, unit_size_) == addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -594,7 +645,7 @@ void Detector::BeforePthreadCondWait(thread_t curr_thd_id,timestamp_t curr_thd_c
 	Inst *inst,address_t cond_addr, address_t mutex_addr)
 {
 	CondVarCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(mutex_addr, unit_size_) == mutex_addr);
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(cond_addr, unit_size_) == cond_addr);
 	if(loop_db_)
@@ -618,7 +669,7 @@ void Detector::AfterPthreadCondWait(thread_t curr_thd_id,
 	address_t mutex_addr)
 {
 	CondVarCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(mutex_addr, unit_size_) == mutex_addr);
   	DEBUG_ASSERT(UNIT_DOWN_ALIGN(cond_addr, unit_size_) == cond_addr);
 
@@ -652,7 +703,7 @@ void Detector::BeforePthreadBarrierWait(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	BarrierCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -667,7 +718,7 @@ void Detector::AfterPthreadBarrierWait(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
 	BarrierCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	BarrierMeta *meta=GetBarrierMeta(addr);
 	DEBUG_ASSERT(meta);
@@ -678,7 +729,7 @@ void Detector::AfterPthreadBarrierWait(thread_t curr_thd_id,
 void Detector::BeforeSemPost(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -692,7 +743,7 @@ void Detector::BeforeSemPost(thread_t curr_thd_id,
 void Detector::BeforeSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
 	if(cond_wait_db_)
@@ -703,7 +754,7 @@ void Detector::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr)
 {
 	SemaphoreCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(UNIT_DOWN_ALIGN(addr,unit_size_)==addr);
 	SemMeta *meta=GetSemMeta(addr);
 	DEBUG_ASSERT(meta);
@@ -742,7 +793,7 @@ void Detector::BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 //help functions
 void Detector::AllocAddrRegion(address_t addr,size_t size)
 {
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	DEBUG_ASSERT(addr && size);
 	filter_->AddRegion(addr,size,false);
 
@@ -751,7 +802,7 @@ void Detector::AllocAddrRegion(address_t addr,size_t size)
 void Detector::FreeAddrRegion(address_t addr)
 {
 
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,knob_->ValueInt("parallel_detector_number"));
 	if(!addr) return ;
 	size_t size=filter_->RemoveRegion(addr,false);
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
@@ -1021,8 +1072,9 @@ void Detector::ProcessSRLSync(thread_t curr_thd_id,Inst *curr_inst)
 	//process spinning read loop
 	thread_t spin_rlt_wrthd=loop_db_->
 		GetSpinRelevantWriteThread(curr_thd_id);
-	loop_db_->ProcessWriteReadSync(curr_thd_id,curr_inst,
-		curr_vc_map_[spin_rlt_wrthd],curr_vc_map_[curr_thd_id]);
+	if(spin_rlt_wrthd!=0)
+		loop_db_->ProcessWriteReadSync(curr_thd_id,curr_inst,
+			curr_vc_map_[spin_rlt_wrthd],curr_vc_map_[curr_thd_id]);
 }
 
 void Detector::ProcessSRLRead(thread_t curr_thd_id,Inst *curr_inst,address_t addr)
@@ -1059,10 +1111,17 @@ void Detector::ProcessSRLWrite(thread_t curr_thd_id,Inst *curr_inst,address_t ad
 	//if there are shared location modification in spinning read loop
 	//this spinning read loop is invalid
 	if(loop_db_->SpinReadThread(curr_thd_id)) {
-		if(loop_db_->SpinReadCalledFuncThread(curr_thd_id))
+		bool valid=true;
+		if(loop_db_->SpinReadCalledFuncThread(curr_thd_id)) {
 			loop_db_->SetSpinReadCalledFunc(curr_thd_id,NULL,false);
-		//remove the potential spinning read meta
-		loop_db_->RemoveSpinReadMeta(curr_thd_id);			
+			valid=false;
+		}
+		if(loop_db_->GetSpinReadAddr(curr_thd_id)==addr)
+			valid=false;
+		if(!valid) {
+			//remove the potential spinning read meta
+			loop_db_->RemoveSpinReadMeta(curr_thd_id);
+		}			
 	}
 }
  

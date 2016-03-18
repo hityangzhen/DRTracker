@@ -56,8 +56,12 @@ void MultiLockHb::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr
 {
 	LockCountIncrease();
 	ScopedLock lock(internal_lock_);
-	if(loop_db_)
+	if(loop_db_) {
 		ProcessSRLSync(curr_thd_id,inst);
+		//increase the current thread's timestamp
+		VectorClock *curr_vc=curr_vc_map_[curr_thd_id];
+		curr_vc->Increment(curr_thd_id);
+	}
 	if(cond_wait_db_) {
 		ProcessCWLSync(curr_thd_id,inst);
 		//remove the unactived lock writes meta
@@ -295,10 +299,14 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 			if((*elsp_it)->first>thd_clk) {
 				Inst *writer_inst=ml_meta->writer_inst_table[thd_id];
 				//spinning read thread
-				//write->read may be not racy
+				//do not consider the lockset
 				if(loop_db_ && loop_db_->SpinReadThread(curr_thd_id)) {
 					loop_db_->SetSpinRelevantWriteThreadAndInst(curr_thd_id,thd_id,
 						writer_inst);
+					//remote write protected by the common lock
+					if(!(*elsp_it)->second.Disjoint(&lock_set)) {
+						loop_db_->SetSpinRelevantWriteLocked(curr_thd_id,true);
+					}
 				}
 			}
 
@@ -409,6 +417,10 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 				if(loop_db_ && loop_db_->SpinReadThread(it->first)) {
 					loop_db_->SetSpinRelevantWriteThreadAndInst(it->first,curr_thd_id,
 						inst);
+					//current write is protected by the common lock
+					if(!(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {
+						loop_db_->SetSpinRelevantWriteLocked(it->first,true);
+					}
 				}
 			}
 

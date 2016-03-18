@@ -47,6 +47,26 @@ bool BBLContainMemOp(BBL bbl)
 	return false;
 }
 
+bool SpawnInternalThread(ROOT_THREAD_FUNC *thd_func,VOID *arg,
+	size_t stack_size,PIN_THREAD_UID *thd_uid)
+{
+	THREADID internal_thd_id=PIN_SpawnInternalThread(thd_func,arg,stack_size,
+		thd_uid);
+	if(internal_thd_id==INVALID_THREADID)
+		return false;
+	return true;
+}
+
+bool IsProcessExiting()
+{
+	return PIN_IsProcessExiting();
+}
+
+void ExitThread(INT32 exitCode)
+{
+	PIN_ExitThread(exitCode);
+}
+
 void Yield()
 {
 	PIN_Yield();

@@ -36,27 +36,13 @@ protected:
 	int procedure_end_line_; //procedure end line
 };
 
-//extend loop with the exiting conditions
-class XLoop:public Loop{
-public:
-	XLoop(int sl,int el):Loop(sl,el) {}
-	~XLoop() {}
-	void AddExitingCondLine(int line) {
-		exiting_cond_line_set_.insert(line);
-	}
-	bool ExitingCondLine(int line) {
-		return exiting_cond_line_set_.find(line)!=exiting_cond_line_set_.end();
-	}
-protected:
-	std::tr1::unordered_set<int> exiting_cond_line_set_;
-};
-
 class LoopDB {
 protected:
 	class SpinReadMeta {
 	public:
 		SpinReadMeta(Inst *inst):spin_inner_count(0),spin_rdinst(inst),
-			spin_rlt_wrinst(NULL),spin_rlt_wrthd(0),spin_callinst(NULL) {}
+			spin_rlt_wrinst(NULL),spin_rlt_wrthd(0),spin_callinst(NULL),
+			spin_rlt_wrlocked(false) {}
 		~SpinReadMeta() {}
 		//spinning loop execution count
 		uint32 spin_inner_count;
@@ -70,6 +56,8 @@ protected:
 		address_t spin_rdaddr;
 		//spinning read called function inst
 		Inst *spin_callinst;
+		//if spinning loop relevant lastest write protected by common lock
+		bool spin_rlt_wrlocked;
 	};
 	class SpinReadCalledFuncMeta {
 	public:
@@ -85,6 +73,7 @@ public:
 	typedef std::tr1::unordered_map<thread_t,SpinReadMeta *> SpinReadMetaTable;
 	typedef std::set<thread_t> SpinThreadSet;
 	typedef std::map<thread_t,SpinReadCalledFuncMeta *> ThreadSpinReadCFMetaMap;
+	typedef std::tr1::unordered_set<uint64> ExitingNodeFirstLineSet;
 
 	LoopDB(RaceDB *race_db);
 	~LoopDB();
@@ -92,6 +81,8 @@ public:
 	bool LoadSpinReads(const char *file_name);
 	bool SpinRead(Inst *inst,RaceEventType type);
 	bool SpinRead(std::string &file_name,int line,RaceEventType type);
+	bool ExitingNodeFirstLine(Inst *inst);
+	bool ExitingNodeFirstLine(std::string &file_name,int line);
 	bool SpinReadCalledFunc(Inst *inst);
 	void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst,
 		VectorClock *wrthd_vc,VectorClock *curr_vc);
@@ -100,6 +91,7 @@ public:
 	bool SpinReadThread(thread_t thd_id);
 	void SetSpinReadThread(thread_t thd_id,Inst *inst);
 	void RemoveSpinReadMeta(thread_t thd_id);
+	void SetSpinRelevantWriteLocked(thread_t thd_id,bool locked);
 	void SetSpinReadAddr(thread_t thd_id,address_t addr);
 	void SetSpinReadCallInst(thread_t thd_id);
 	address_t GetSpinReadAddr(thread_t thd_id);
@@ -127,6 +119,8 @@ protected:
 	SpinReadMetaTable spin_rdmeta_table_;
 	//spinning loop thread  and called function mapping
 	ThreadSpinReadCFMetaMap spinthd_cfmeta_map_;
+	//first line of the exiting node(contains `break` or `return` or `goto`)
+	ExitingNodeFirstLineSet en_first_line_set_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(LoopDB);
 };
