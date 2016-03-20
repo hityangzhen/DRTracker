@@ -113,11 +113,11 @@ void ExecutionControl::PostSetup()
 		AddAnalyzer(debug_analyzer_);
 	}
 
-	if(knob_->ValueInt("parallel_detector_number")>0) {
+	HandlePostSetup();
+
+	if(GetParallelDetectorNumber()>0) {
 		ParallelDetectionThread();
 	}
-
-	HandlePostSetup();
 
 	//Setup call stack info if needed.
 	if(desc_.TrackCallStack()) {
@@ -448,6 +448,12 @@ EventBase *ExecutionControl::GetEventBase(thread_t thd_id)
 	return eb;
 }
 
+bool ExecutionControl::DetectionDequeEmpty(thread_t thd_id)
+{
+	DEBUG_ASSERT(thd_deq_table_.find(thd_id)!=thd_deq_table_.end());
+	return thd_deq_table_[thd_id]->empty();
+}
+
 //detector thread main function
 void ExecutionControl::CreateDetectionThread(VOID *v)
 {
@@ -464,7 +470,7 @@ void ExecutionControl::CreateDetectionThread(VOID *v)
 
 void ExecutionControl::ParallelDetectionThread()
 {
-	int prl_dtc_num=knob_->ValueInt("parallel_detector_number");
+	int prl_dtc_num=GetParallelDetectorNumber();
 	//create the extented paralle detector threads
 	if(prl_dtc_num>0) {
 		for(int i=0;i<prl_dtc_num;i++) {
@@ -473,6 +479,11 @@ void ExecutionControl::ParallelDetectionThread()
 				Abort("Can not spawn internal thread.\n");
 		}	
 	}
+}
+
+int ExecutionControl::GetParallelDetectorNumber()
+{
+	return knob_->ValueInt("parallel_detector_number");
 }
 
 void ExecutionControl::PushEventBufferToDetectionDeque(thread_t thd_uid,
@@ -493,6 +504,7 @@ void ExecutionControl::PushEventToDetectionDeque(thread_t thd_uid,
 	ScopedLock lock(thd_deqlk_table_[thd_uid]);
 	EventDeque *dtc_eb_deq=thd_deq_table_[thd_uid];
 	dtc_eb_deq->push_back(eb);
+	// INFO_FMT_PRINT("============detection deque size:[%ld]==========\n",dtc_eb_deq->size());
 }
 
 void ExecutionControl::FreeEventBuffer()
@@ -511,7 +523,7 @@ void ExecutionControl::FreeEventBuffer()
 }
 
 void ExecutionControl::ProgramStart()
-{}
+{ }
 
 void ExecutionControl::ProgramExit(INT32 code,VOID *v)
 {
@@ -536,23 +548,23 @@ void ExecutionControl::ProgramExit(INT32 code,VOID *v)
 
 void ExecutionControl::FiniUnlocked(INT32 code,VOID *v)
 {
-	if(knob_->ValueInt("parallel_detector_number")>0) {
-		//wait for the termination of the detection threads
-		BOOL wait_status;
-		INT32 thd_exit_code;
-		BOOL thd_exit_status=TRUE;
-		for(EventDequeTable::iterator iter=thd_deq_table_.begin();
-			iter!=thd_deq_table_.end();iter++) {
-			wait_status=PIN_WaitForThreadTermination(iter->first,PIN_INFINITE_TIMEOUT,
-				&thd_exit_code);
-			if(!wait_status)
-				Abort("PIN_WaitForThreadTermination failed.\n");
-			if(thd_exit_code!=0)
-				thd_exit_status=FALSE;
-		}
-		if(!thd_exit_status)
-			Abort("At least one of the detection threads exit abnormally.\n");
-	}
+	// if(GetParallelDetectorNumber()>0) {
+	// 	//wait for the termination of the detection threads
+	// 	BOOL wait_status;
+	// 	INT32 thd_exit_code;
+	// 	BOOL thd_exit_status=TRUE;
+	// 	for(EventDequeTable::iterator iter=thd_deq_table_.begin();
+	// 		iter!=thd_deq_table_.end();iter++) {
+	// 		wait_status=PIN_WaitForThreadTermination(iter->first,PIN_INFINITE_TIMEOUT,
+	// 			&thd_exit_code);
+	// 		if(!wait_status)
+	// 			Abort("PIN_WaitForThreadTermination failed.\n");
+	// 		if(thd_exit_code!=0)
+	// 			thd_exit_status=FALSE;
+	// 	}
+	// 	if(!thd_exit_status)
+	// 		Abort("At least one of the detection threads exit abnormally.\n");
+	// }
 }
 //Register a notification function that is called when a thread starts executing in the 
 //application. The call-back happens even for the application's root (initial) thread.
@@ -583,7 +595,7 @@ void ExecutionControl::ThreadStart(THREADID tid,CONTEXT *ctxt,INT32 flags,VOID *
 		main_thread_started_=true;
 	}
 	//create buffer for each detection thread in application thread TLS slot
-	size_t prl_dtc_num=knob_->ValueInt("parallel_detector_number");
+	size_t prl_dtc_num=GetParallelDetectorNumber();
 	if(prl_dtc_num>0) {
 		//wait for all detection threads have been created
 		while(thd_deq_table_.size()!=prl_dtc_num) {
@@ -612,9 +624,8 @@ void ExecutionControl::ThreadExit(THREADID tid,const CONTEXT *ctxt,INT32 code,VO
 {
 	HandleThreadExit();
 	//free the event buffer
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
 		FreeEventBuffer();
-
 	OS_THREAD_ID os_tid=PIN_GetTid();
 	ScopedLock locker(kernel_lock_);
 	//
@@ -674,7 +685,7 @@ void ExecutionControl::HandleImageLoad(IMG img,Image *image)
 	//notify all analyzers which needs to do some image load handlings
 	CALL_ANALYSIS_FUNC(ImageLoad,image,low_addr,high_addr,data_start,data_size,
 		bss_start,bss_size);
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_NONMEM_EVENT(ImageLoad,image,low_addr,high_addr,data_start,
 			data_size,bss_start,bss_size);
 }
@@ -700,7 +711,7 @@ void ExecutionControl::HandleImageUnload(IMG img, Image *image)
   	}
   	CALL_ANALYSIS_FUNC(ImageUnload, image, low_addr, high_addr, data_start,
                      data_size, bss_start, bss_size);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_NONMEM_EVENT(ImageUnload,image,low_addr,high_addr,data_start,
 			data_size,bss_start,bss_size);
 }
@@ -711,7 +722,7 @@ void ExecutionControl::HandleThreadStart()
 	thread_t self=Self();
 	thread_t parent=GetParent();
 	CALL_ANALYSIS_FUNC(ThreadStart,self,parent);
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_NONMEM_EVENT(ThreadStart,self,parent);
 }
 
@@ -720,7 +731,7 @@ void ExecutionControl::HandleThreadExit()
 	thread_t self=Self();
 	timestamp_t curr_thd_clk=GetThdClk(PIN_ThreadId());
 	CALL_ANALYSIS_FUNC(ThreadExit,self,curr_thd_clk);
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_NONMEM_EVENT(ThreadExit,self,curr_thd_clk);
 }
 
@@ -746,7 +757,7 @@ void ExecutionControl::HandleBeforeMemRead(THREADID tid,Inst *inst,
 	timestamp_t curr_thd_clk=GetThdClk(tid);
 	CALL_ANALYSIS_FUNC2(BeforeMem,BeforeMemRead,self,curr_thd_clk,inst,
 		addr,size);
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_MEMORY_EVENT(BeforeMemRead,self,curr_thd_clk,inst,addr,size);
 }
 
@@ -757,7 +768,7 @@ void ExecutionControl::HandleAfterMemRead(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(AfterMem, AfterMemRead, self, curr_thd_clk,
                       inst, addr, size);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_MEMORY_EVENT(AfterMemRead,self,curr_thd_clk,inst,addr,size);
 }
 
@@ -768,7 +779,7 @@ void ExecutionControl::HandleBeforeMemWrite(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(BeforeMem, BeforeMemWrite, self, curr_thd_clk,
                       inst, addr, size);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_MEMORY_EVENT(BeforeMemWrite,self,curr_thd_clk,inst,addr,size);
 }
 
@@ -779,7 +790,7 @@ void ExecutionControl::HandleAfterMemWrite(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(AfterMem, AfterMemWrite, self, curr_thd_clk,
                       inst, addr, size);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
 		DISTRIBUTE_MEMORY_EVENT(AfterMemWrite,self,curr_thd_clk,inst,addr,size);
 }
 
@@ -791,7 +802,7 @@ void ExecutionControl::HandleBeforeAtomicInst(THREADID tid, Inst *inst,
   	std::string type = OPCODE_StringShort(opcode);
   	CALL_ANALYSIS_FUNC2(AtomicInst, BeforeAtomicInst, self, curr_thd_clk,
                       inst, type, addr);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeAtomicInst,self,curr_thd_clk,inst,type,
   			addr);
 }
@@ -805,7 +816,7 @@ void ExecutionControl::HandleAfterAtomicInst(THREADID tid, Inst *inst,
   	std::string type = OPCODE_StringShort(opcode); 
   	CALL_ANALYSIS_FUNC2(AtomicInst, AfterAtomicInst, self, curr_thd_clk,
                       inst, type, addr);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterAtomicInst,self,curr_thd_clk,inst,type,
   			addr);
 }
@@ -818,7 +829,7 @@ void ExecutionControl::HandleBeforeCall(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, BeforeCall, self, curr_thd_clk,
                       inst, target);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeCall,self,curr_thd_clk,inst,target);
 }
 
@@ -829,7 +840,7 @@ void ExecutionControl::HandleAfterCall(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, AfterCall, self, curr_thd_clk,
                       inst, target, ret);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterCall,self,curr_thd_clk,inst,target,ret);
 }
 
@@ -840,7 +851,7 @@ void ExecutionControl::HandleBeforeReturn(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, BeforeReturn, self, curr_thd_clk,
                       inst, target);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeReturn,self,curr_thd_clk,inst,target);
 }
 
@@ -851,7 +862,7 @@ void ExecutionControl::HandleAfterReturn(THREADID tid, Inst *inst,
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, AfterReturn, self, curr_thd_clk,
                       inst, target);
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterReturn,self,curr_thd_clk,inst,target);
 }
 
@@ -1176,7 +1187,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCreate,ExecutionControl)
 			GetThdClk(wrapper->tid()),
 			inst);
 
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadCreate,self,
   			GetThdClk(wrapper->tid()),inst);
 
@@ -1189,7 +1200,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCreate,ExecutionControl)
 			GetThdClk(wrapper->tid()),
 			inst,
 			child_thd_id);
-	if(knob_->ValueInt("parallel_detector_number")>0)
+	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadCreate,self,
   			GetThdClk(wrapper->tid()),inst,child_thd_id);
 }
@@ -1206,7 +1217,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadJoin,ExecutionControl)
                       inst,
                       child);
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadJoin,self,
   			GetThdClk(wrapper->tid()),inst,child);
 
@@ -1219,7 +1230,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadJoin,ExecutionControl)
                       inst,
                       child);
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadJoin,self,
   			GetThdClk(wrapper->tid()),inst,child);
 }
@@ -1235,7 +1246,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexTryLock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadMutexTryLock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1248,7 +1259,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexTryLock, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadMutexTryLock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->ret_val());
@@ -1265,7 +1276,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexLock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadMutexLock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1276,7 +1287,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexLock, ExecutionControl)
                       GetThdClk(wrapper->tid()),
                       inst,
                       (address_t)wrapper->arg0());
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadMutexLock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1292,7 +1303,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexUnlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadMutexUnlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1304,7 +1315,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadMutexUnlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadMutexUnlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1320,7 +1331,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockTryRdlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadRwlockTryRdlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1333,7 +1344,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockTryRdlock, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadRwlockTryRdlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->ret_val());	
@@ -1350,7 +1361,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockTryWrlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadRwlockTryWrlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1363,7 +1374,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockTryWrlock, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadRwlockTryWrlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->ret_val());	
@@ -1380,7 +1391,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockRdlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadRwlockRdlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1392,7 +1403,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockRdlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadRwlockRdlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1408,7 +1419,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockWrlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadRwlockWrlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
   
@@ -1420,7 +1431,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockWrlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadRwlockWrlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1436,7 +1447,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockUnlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadRwlockUnlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1448,7 +1459,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadRwlockUnlock, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadRwlockUnlock,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1464,7 +1475,7 @@ IMPLEMENT_WRAPPER_HANDLER(Malloc, ExecutionControl)
                       inst,
                       wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeMalloc,self,
   			GetThdClk(wrapper->tid()),inst,wrapper->arg0());
  
@@ -1477,7 +1488,7 @@ IMPLEMENT_WRAPPER_HANDLER(Malloc, ExecutionControl)
                       wrapper->arg0(),
                       (address_t)wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterMalloc,self,
   			GetThdClk(wrapper->tid()),inst,wrapper->arg0(),
   			(address_t)wrapper->ret_val());	
@@ -1495,7 +1506,7 @@ IMPLEMENT_WRAPPER_HANDLER(Calloc, ExecutionControl)
                       wrapper->arg0(),
                       wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeCalloc,self,
   			GetThdClk(wrapper->tid()),inst,wrapper->arg0(),wrapper->arg1());
   	
@@ -1509,7 +1520,7 @@ IMPLEMENT_WRAPPER_HANDLER(Calloc, ExecutionControl)
                       wrapper->arg1(),
                       (address_t)wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterCalloc,self,
   			GetThdClk(wrapper->tid()),inst,wrapper->arg0(),wrapper->arg1(),
   			(address_t)wrapper->ret_val());	
@@ -1527,7 +1538,7 @@ IMPLEMENT_WRAPPER_HANDLER(Realloc, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeRealloc,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg1());
@@ -1542,7 +1553,7 @@ IMPLEMENT_WRAPPER_HANDLER(Realloc, ExecutionControl)
                       wrapper->arg1(),
                       (address_t)wrapper->ret_val());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterRealloc,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg1(),(address_t)wrapper->ret_val());	
@@ -1559,7 +1570,7 @@ IMPLEMENT_WRAPPER_HANDLER(Free, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeFree,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 
@@ -1571,7 +1582,7 @@ IMPLEMENT_WRAPPER_HANDLER(Free, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterFree,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1587,7 +1598,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondSignal,ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadCondSignal,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1599,7 +1610,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondSignal,ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadCondSignal,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1615,7 +1626,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondBroadcast, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadCondBroadcast,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 
@@ -1627,7 +1638,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondBroadcast, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadCondBroadcast,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1644,7 +1655,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondWait, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       (address_t)wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadCondWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			(address_t)wrapper->arg1());
@@ -1658,7 +1669,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondWait, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       (address_t)wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadCondWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			(address_t)wrapper->arg1());	
@@ -1676,7 +1687,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondTimedwait, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       (address_t)wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadCondTimedwait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			(address_t)wrapper->arg1());
@@ -1690,7 +1701,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadCondTimedwait, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       (address_t)wrapper->arg1());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadCondTimedwait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			(address_t)wrapper->arg1());	
@@ -1708,7 +1719,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadBarrierInit, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->arg2());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadBarrierInit,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg2());	
@@ -1722,7 +1733,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadBarrierInit, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->arg2());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadBarrierInit,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg2());	
@@ -1739,7 +1750,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadBarrierWait, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforePthreadBarrierWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 
@@ -1751,7 +1762,7 @@ IMPLEMENT_WRAPPER_HANDLER(PthreadBarrierWait, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterPthreadBarrierWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1768,7 +1779,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemInit, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->arg2());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeSemInit,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg2());	
@@ -1782,7 +1793,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemInit, ExecutionControl)
                       (address_t)wrapper->arg0(),
                       wrapper->arg2());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterSemInit,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0(),
   			wrapper->arg2());		
@@ -1799,7 +1810,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemPost, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeSemPost,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());
 
@@ -1811,7 +1822,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemPost, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterSemPost,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }
@@ -1827,7 +1838,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemWait, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(BeforeSemWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 
@@ -1839,7 +1850,7 @@ IMPLEMENT_WRAPPER_HANDLER(SemWait, ExecutionControl)
                       inst,
                       (address_t)wrapper->arg0());
 
-  	if(knob_->ValueInt("parallel_detector_number")>0)
+  	if(GetParallelDetectorNumber()>0)
   		DISTRIBUTE_NONMEM_EVENT(AfterSemWait,self,
   			GetThdClk(wrapper->tid()),inst,(address_t)wrapper->arg0());	
 }

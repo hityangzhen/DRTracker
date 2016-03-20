@@ -9,7 +9,7 @@ tool_path=/home/yiranyaoqiu/RaceChecker
 /home/yiranyaoqiu/pin/pin -t $tool_path/build-debug/race_profiler.so \
 -enable_djit 1 -parallel_detector_number 2 -track_racy_inst 1 \
 -ignore_lib 1 -enable_debug 1 -debug_pthread 1 -debug_mem 1 -debug_main 1 \
--debug_pthread 1 -debug_malloc 1 -- test/test5
+-debug_pthread 1 -debug_malloc 1 -- test/test1
 
 # pure dynamic data race verification
 # when do the multigroup verification, set history_race_analysis 0

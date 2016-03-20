@@ -5,7 +5,7 @@
 
 namespace race {
 
-std::map<std::string,Detector::EventHandle> Detector::event_handle_table_;
+std::map<std::string,Detector::EventHandle> Detector::event_handle_table;
 
 Detector::Detector():internal_lock_(NULL),race_db_(NULL),unit_size_(4),
 	filter_(NULL),vc_mem_size_(0),adhoc_sync_(NULL),loop_db_(NULL),

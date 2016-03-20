@@ -1,7 +1,10 @@
 #include "race/profiler.h"
 #include "core/log.h"
+#include "core/atomic.h"
 
 namespace race{
+// volatile size_t Profiler::exit_num=0;
+// address_t Profiler::unit_size=0;
 void Profiler::HandlePreSetup()
 {
 	ExecutionControl::HandlePreSetup();
@@ -11,8 +14,8 @@ void Profiler::HandlePreSetup()
 	knob_->RegisterStr("race_report","the output race report path","race.rp");
 
 	//======================data race detection=====================
-	djit_analyzer_=new Djit;
-	djit_analyzer_->Register();
+	// djit_analyzer_=new Djit;
+	// djit_analyzer_->Register();
 
 	// eraser_analyzer_=new Eraser();
 	// eraser_analyzer_->Register();
@@ -75,10 +78,10 @@ void Profiler::HandlePostSetup()
 	//======================data race detection=====================
 
 	//add  data race detector
-	if(djit_analyzer_->Enabled()) {
-		djit_analyzer_->Setup(CreateMutex(),race_db_);
-		AddAnalyzer(djit_analyzer_);
-	}
+	// if(djit_analyzer_->Enabled()) {
+	// 	djit_analyzer_->Setup(CreateMutex(),race_db_);
+	// 	AddAnalyzer(djit_analyzer_);
+	// }
 
 	// if(eraser_analyzer_->Enabled()) {
 	// 	eraser_analyzer_->Setup(CreateMutex(),race_db_);
@@ -166,17 +169,6 @@ void Profiler::HandlePostSetup()
 	//==============================end============================
 }
 
-address_t Profiler::GetUnitSize()
-{
-	//get the detector unit_size
-	std::tr1::unordered_map<thread_t,Detector *>::iterator iter=
-		thd_dtc_map_.begin();
-	if(iter==thd_dtc_map_.end())
-		return 0;
-	//assume all the detector have the same unit size
-	return iter->second->GetUnitSize();
-}
-
 bool Profiler::HandleIgnoreMemAccess(IMG img)
 {
 	if(!IMG_Valid(img))
@@ -194,7 +186,6 @@ void Profiler::HandleProgramExit()
 {
 	ExecutionControl::HandleProgramExit();
 
-	//======================data race detection=====================
 	// //save statistics
 	// djit_analyzer_->SaveStatistics("statistics");
 	// //eraser_analyzer_->SaveStatistics("statistics");
@@ -210,15 +201,13 @@ void Profiler::HandleProgramExit()
 
 	//save race db
 	race_db_->Save(knob_->ValueStr("race_out"),sinfo_);
-
 	//save race report
 	race_rp_->Save(knob_->ValueStr("race_report"),race_db_);
-	
 	delete race_db_;
 	delete race_rp_;
-
+	//======================data race detection=====================
 	// delete eraser_analyzer_;
-	delete djit_analyzer_;
+	// delete djit_analyzer_;
 	// delete helgrind_analyzer_;
 	// delete thread_sanitizer_analyzer_;
 	// delete fast_track_analyzer_;
@@ -244,38 +233,50 @@ void Profiler::HandleProgramExit()
 	// delete pre_group_analyzer_;
 	// delete prace_db_;
 	//==============================end============================	
+
+	//======================parallel detection=====================
+	ATOMIC_NAND_AND_FETCH(&exit_flag_,0);
+	size_t prl_dtc_num=GetParallelDetectorNumber();
+	while(exit_num_!=prl_dtc_num)
+		Sleep(1000);
+	//==============================end============================
 }
 
 void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 {
 	//create a new detector for each detection thread
 	Detector *dtc=new Djit;
-	thd_dtc_map_[thd_id]=dtc;
+	LockKernel();
 	dtc->Register();
-	if(dtc->Enabled())
-		dtc->Setup(CreateMutex(),race_db_);
+	//here we not firstly register the enable_djit in the HandlePreStepup,
+	//so do not need to use the Enabled(); otherwise, can update the originl
+	//value to 0
+	dtc->Setup(CreateMutex(),race_db_);
+	UnlockKernel();
+	if(unit_size_==0)
+		unit_size_=dtc->GetUnitSize();
 	//get the eventbase from the queue
 	while(true) {
 		EventBase *eb=GetEventBase(thd_id);
-		if(eb==NULL)
-			goto postponed;
+		if(eb==NULL) {
+			goto postponed;			
+		}
 		else {
-			INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
 			Detector::EventHandle eh=dtc->GetEventHandle(eb->name());
 			if(eh==NULL)
 				goto postponed;
 			else {
+				INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
 				(*eh)(dtc,eb); //execute the event handle
 				goto postponed;
 			}
 		}
 		postponed:
-			if(IsProcessExiting())
+			if(exit_flag_ && DetectionDequeEmpty(thd_id))
 				break;
-			// Yield();
-			Sleep(10);
 	}
 	delete dtc;
+	ATOMIC_ADD_AND_FETCH(&exit_num_,1);
 	ExitThread(0);
 }
 

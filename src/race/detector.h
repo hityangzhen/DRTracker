@@ -35,7 +35,7 @@
 
 //class static function pointer
 #define REGISTER_EVENT_HANDLE(Name)                                     \
-  event_handle_table_[#Name]=&Detector::Name##EventHandle
+  event_handle_table[#Name]=&Detector::Name##EventHandle
 
 namespace race {
 
@@ -209,12 +209,12 @@ public:
   //unified event handle function pointer
   typedef void (*EventHandle)(Detector *,EventBase *);
   static EventHandle GetEventHandle(std::string name) {
-    if(event_handle_table_.find(name)==event_handle_table_.end())
+    if(event_handle_table.find(name)==event_handle_table.end())
         return NULL;
-    return event_handle_table_[name];
+    return event_handle_table[name];
   }
 
-  static std::map<std::string,EventHandle> event_handle_table_;
+  static std::map<std::string,EventHandle> event_handle_table;
 protected:
   typedef std::map<int,Loop> LoopTable;
   typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;

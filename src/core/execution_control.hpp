@@ -273,10 +273,12 @@ protected:
   	void ReplaceMallocWrappers(IMG img);
 
   	EventBase *GetEventBase(thread_t thd_id);
+  	bool DetectionDequeEmpty(thread_t thd_id);
   	virtual address_t GetUnitSize() { return 0; }
   	void FreeEventBuffer();
   	void PushEventBufferToDetectionDeque(thread_t thd_uid,EventBuffer *buff);
   	void PushEventToDetectionDeque(thread_t thd_uid,EventBase *eb);
+  	int GetParallelDetectorNumber();
 
   	Mutex *kernel_lock_;
  	Knob *knob_;

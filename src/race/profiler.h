@@ -44,7 +44,8 @@ public:
 			verifier_analyzer_(NULL),
 			verifier_sl_analyzer_(NULL),
 			verifier_ml_analyzer_(NULL),
-			pre_group_analyzer_(NULL)
+			pre_group_analyzer_(NULL),
+			exit_num_(0),exit_flag_(0),unit_size_(0)
 	{}
 	~Profiler() {}
 protected:
@@ -53,7 +54,7 @@ protected:
 	bool HandleIgnoreMemAccess(IMG img);
 	void HandleProgramExit();
 	void HandleCreateDetectionThread(thread_t thd_id);
-	address_t GetUnitSize();
+	address_t GetUnitSize() { return unit_size_; }
 	//======================data race detection=====================
 	RaceDB *race_db_;
 	RaceReport *race_rp_;
@@ -78,9 +79,9 @@ protected:
 	VerifierMl *verifier_ml_analyzer_;
 	PreGroup *pre_group_analyzer_;
 	//==============================end============================	
-
-
-	std::tr1::unordered_map<thread_t,Detector *> thd_dtc_map_;
+	volatile size_t exit_num_;
+	volatile unsigned exit_flag_;
+	address_t unit_size_;
 private:
 	void LoadPStmts();
 	void LoadPStmts2();
