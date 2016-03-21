@@ -33,11 +33,11 @@ pintools += \
 	race_profiler.so
 
 race_profiler_objs := \
+  race/adhoc_sync.o \
   race/cond_wait.o \
   race/loop.o \
-  race/adhoc_sync.o \
   race/detector.o \
-  race/djit.o \
+  race/multilock_hb.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

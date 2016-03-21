@@ -38,7 +38,7 @@ void MultiLockHb::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_th
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
 	if(cond_wait_db_)
 		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
 	LockSet *curr_lockset;
@@ -55,7 +55,7 @@ void MultiLockHb::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
 	if(loop_db_) {
 		ProcessSRLSync(curr_thd_id,inst);
 		//increase the current thread's timestamp
@@ -78,7 +78,7 @@ void MultiLockHb::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
 	LockSet *curr_reader_lockset;
 	if(curr_reader_lockset_table_.find(curr_thd_id)==curr_reader_lockset_table_.end()||
 		!curr_reader_lockset_table_[curr_thd_id])
@@ -99,7 +99,7 @@ void MultiLockHb::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t cur
 {
 	LockCountIncrease();
 	//readwrite lock is either in writer lockset or in reader lockset
-	ScopedLock lock(internal_lock_);
+	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
 
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);
@@ -243,6 +243,7 @@ void MultiLockHb::update_on_write(timestamp_t curr_clk,thread_t curr_thd,LockSet
 
 void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 {
+	// INFO_PRINT("process read\n");
 	MlMeta *ml_meta=dynamic_cast<MlMeta*>(meta);
 	DEBUG_ASSERT(ml_meta);
 	//process write->spinning read sync
@@ -326,11 +327,12 @@ void MultiLockHb::ProcessRead(thread_t curr_thd_id,Meta *meta,Inst *inst)
 	//update race inst set if needed
 	if(track_racy_inst_)
 		ml_meta->race_inst_set.insert(inst);
+	// INFO_PRINT("process read end\n");
 }
 
 void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 {
-	//INFO_PRINT("process write\n");
+	// INFO_PRINT("process write\n");
 	MlMeta *ml_meta=dynamic_cast<MlMeta*>(meta);
 	DEBUG_ASSERT(ml_meta);
 	//process write->spinning read sync
@@ -384,9 +386,9 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=writer_elsp_vec->begin();
 			elsp_it!=writer_elsp_vec->end();elsp_it++) {
 
-			// INFO_FMT_PRINT("current lockset:%s\n",
-			// 	curr_lockset_table_[curr_thd_id]->ToString().c_str());
-			// INFO_FMT_PRINT("writer_elsp:%s\n",(*elsp_it)->second.ToString().c_str());
+			INFO_FMT_PRINT("current lockset:%s\n",
+				curr_lockset_table_[curr_thd_id]->ToString().c_str());
+			INFO_FMT_PRINT("writer_elsp:%s\n",(*elsp_it)->second.ToString().c_str());
 
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {
@@ -439,7 +441,7 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 	//update race inst set if needed
 	if(track_racy_inst_)
 		ml_meta->race_inst_set.insert(inst);
-	//INFO_PRINT("process write end\n");
+	// INFO_PRINT("process write end\n");
 }
 
 

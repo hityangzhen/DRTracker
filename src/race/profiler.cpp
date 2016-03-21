@@ -235,17 +235,17 @@ void Profiler::HandleProgramExit()
 	//==============================end============================	
 
 	//======================parallel detection=====================
-	ATOMIC_NAND_AND_FETCH(&exit_flag_,0);
-	size_t prl_dtc_num=GetParallelDetectorNumber();
-	while(exit_num_!=prl_dtc_num)
-		Sleep(1000);
+	// ATOMIC_NAND_AND_FETCH(&exit_flag_,0);
+	// size_t prl_dtc_num=GetParallelDetectorNumber();
+	// while(exit_num_!=prl_dtc_num)
+	// 	Sleep(1000);
 	//==============================end============================
 }
 
 void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 {
 	//create a new detector for each detection thread
-	Detector *dtc=new Djit;
+	Detector *dtc=new MultiLockHb;
 	LockKernel();
 	dtc->Register();
 	//here we not firstly register the enable_djit in the HandlePreStepup,
@@ -266,13 +266,13 @@ void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 			if(eh==NULL)
 				goto postponed;
 			else {
-				INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
+				// INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
 				(*eh)(dtc,eb); //execute the event handle
 				goto postponed;
 			}
 		}
 		postponed:
-			if(exit_flag_ && DetectionDequeEmpty(thd_id))
+			if(IsProcessExiting() && DetectionDequeEmpty(thd_id))
 				break;
 	}
 	delete dtc;

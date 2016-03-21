@@ -11,8 +11,6 @@
 #include "race/race.h"
 #include "core/pin_sync.hpp"
 #include "core/vector_clock.h"
-#include "race/loop.h"
-#include "race/cond_wait.h"
 
 //default dynamic data race detection engine is FastTrack
 
@@ -229,17 +227,7 @@ public:
 		Inst *inst,thread_t child_thd_id);
 	virtual void AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk, 
 		Inst *inst,thread_t child_thd_id);
-
-	//call-return
-	virtual void BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-		Inst *inst,address_t target);
-	virtual void AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-		Inst *inst,address_t target,address_t ret);
-	virtual void BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-		Inst *inst,address_t target);
-	virtual void AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-		Inst *inst,address_t target);
-
+	
 	//read-write
 	virtual void BeforeMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,address_t addr,size_t size);
@@ -441,16 +429,6 @@ protected:
 		blk_thd_set_.erase(curr_thd_id);
 		avail_thd_set_.insert(curr_thd_id);
 	}
-	//ad-hoc wrapper functions
-	void ProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
-	void WakeUpAfterProcessWriteReadSync(thread_t curr_thd_id,Inst *curr_inst);
-	//cond_wait wrapper functions
-	void ProcessLockSignalWrite(thread_t curr_thd_id,address_t addr);
-	bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
-		address_t addr);
-	bool ProcessCondWaitRead(thread_t curr_thd_id,Inst *curr_inst,
-		address_t addr,std::string &file_name,int line);
-	void ProcessSignalCondWaitSync(thread_t curr_thd_id,Inst *curr_inst);
 
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
@@ -486,10 +464,6 @@ protected:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
-	//loop info
-	LoopDB *loop_db_;
-	//cond_wait info
-	CondWaitDB *cond_wait_db_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };

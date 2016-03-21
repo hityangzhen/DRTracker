@@ -35,7 +35,8 @@
 
 //class static function pointer
 #define REGISTER_EVENT_HANDLE(Name)                                     \
-  event_handle_table[#Name]=&Detector::Name##EventHandle
+  if(event_handle_table.find(#Name)==event_handle_table.end())          \
+    event_handle_table[#Name]=&Detector::Name##EventHandle
 
 namespace race {
 

@@ -84,6 +84,9 @@ public:
 	virtual std::string name()=0;
 	virtual std::string func()=0;
 	virtual int argc()=0;
+	virtual int ref()=0;
+	virtual void increase_ref()=0;
+	virtual int decrease_ref()=0;
 protected:
 	EventBase() {}
 	virtual ~EventBase() {}

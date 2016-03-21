@@ -115,9 +115,9 @@ void ExecutionControl::PostSetup()
 
 	HandlePostSetup();
 
-	if(GetParallelDetectorNumber()>0) {
-		ParallelDetectionThread();
-	}
+	// if(GetParallelDetectorNumber()>0) {
+	// 	ParallelDetectionThread();
+	// }
 
 	//Setup call stack info if needed.
 	if(desc_.TrackCallStack()) {
@@ -548,23 +548,23 @@ void ExecutionControl::ProgramExit(INT32 code,VOID *v)
 
 void ExecutionControl::FiniUnlocked(INT32 code,VOID *v)
 {
-	// if(GetParallelDetectorNumber()>0) {
-	// 	//wait for the termination of the detection threads
-	// 	BOOL wait_status;
-	// 	INT32 thd_exit_code;
-	// 	BOOL thd_exit_status=TRUE;
-	// 	for(EventDequeTable::iterator iter=thd_deq_table_.begin();
-	// 		iter!=thd_deq_table_.end();iter++) {
-	// 		wait_status=PIN_WaitForThreadTermination(iter->first,PIN_INFINITE_TIMEOUT,
-	// 			&thd_exit_code);
-	// 		if(!wait_status)
-	// 			Abort("PIN_WaitForThreadTermination failed.\n");
-	// 		if(thd_exit_code!=0)
-	// 			thd_exit_status=FALSE;
-	// 	}
-	// 	if(!thd_exit_status)
-	// 		Abort("At least one of the detection threads exit abnormally.\n");
-	// }
+	if(GetParallelDetectorNumber()>0) {
+		//wait for the termination of the detection threads
+		BOOL wait_status;
+		INT32 thd_exit_code;
+		BOOL thd_exit_status=TRUE;
+		for(EventDequeTable::iterator iter=thd_deq_table_.begin();
+			iter!=thd_deq_table_.end();iter++) {
+			wait_status=PIN_WaitForThreadTermination(iter->first,PIN_INFINITE_TIMEOUT,
+				&thd_exit_code);
+			if(!wait_status)
+				Abort("PIN_WaitForThreadTermination failed.\n");
+			if(thd_exit_code!=0)
+				thd_exit_status=FALSE;
+		}
+		if(!thd_exit_status)
+			Abort("At least one of the detection threads exit abnormally.\n");
+	}
 }
 //Register a notification function that is called when a thread starts executing in the 
 //application. The call-back happens even for the application's root (initial) thread.

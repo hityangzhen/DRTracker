@@ -104,7 +104,6 @@
 	int main(int argc,char *argv[]) {											\
 		ctrl->Initialize();														\
 		ctrl->PreSetup();														\
-																				\
 		PIN_InitSymbols();														\
 		PIN_Init(argc,argv);													\
 		ctrl->PostSetup();														\
@@ -117,6 +116,7 @@
 		PIN_AddThreadStartFunction(I_ThreadStart,NULL);							\
 		PIN_AddThreadFiniFunction(I_ThreadExit,NULL);							\
 		ctrl->app_thd_key=PIN_CreateThreadDataKey(0);							\
+		ctrl->ParallelDetectionThread();										\
 		I_ProgramStart();														\
 		PIN_StartProgram();														\
 	}																				
@@ -171,12 +171,26 @@
 				PushEventBufferToDetectionDeque(iter->first,buff);				\
 		}																		\
 	}																			\
-	event->decrease_ref();														\
-	for(EventDequeTable::iterator iter=thd_deq_table_.begin();					\
-		iter!=thd_deq_table_.end();iter++) {									\
-		event->increase_ref();													\
-		PushEventToDetectionDeque(iter->first,event);							\
-	} 																			\
+	if(thd_deq_table_.empty())													\
+		pre_event_deq_.push_back(event);										\
+	else {																		\
+		while(!pre_event_deq_.empty()) {										\
+			EventBase *pre_event=pre_event_deq_.front();						\
+			pre_event_deq_.pop_front();											\
+			pre_event->decrease_ref();											\
+			for(EventDequeTable::iterator iter=thd_deq_table_.begin();			\
+				iter!=thd_deq_table_.end();iter++) {							\
+				pre_event->increase_ref();										\
+				PushEventToDetectionDeque(iter->first,pre_event);				\
+			} 																	\
+		}																		\
+		event->decrease_ref();													\
+		for(EventDequeTable::iterator iter=thd_deq_table_.begin();				\
+			iter!=thd_deq_table_.end();iter++) {								\
+			event->increase_ref();												\
+			PushEventToDetectionDeque(iter->first,event);						\
+		} 																		\
+	}																			\
 	} while(0)
 
 //The main controller for the dynamic program analysis.
@@ -308,6 +322,7 @@ protected:
  	std::vector<std::string> static_profile_;
  	std::tr1::unordered_set<uint64> instrumented_lines_;
  	//detection thread queue
+ 	EventDeque pre_event_deq_;
  	EventDequeTable thd_deq_table_;
  	EventDequeLockTable thd_deqlk_table_;
  	static ExecutionControl *ctrl_;
