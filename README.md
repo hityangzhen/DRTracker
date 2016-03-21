@@ -15,13 +15,16 @@ We only implemented the kernel algorithm.
 * [FastTrack](http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.217.663&rep=rep1&type=pdf)
 * [Loft](http://www.cs.cityu.edu.hk/~wkchan/papers/issre2011-cai+chan.pdf)
 
-###1.3 Hybrid algorithm
+### 1.3 Hybrid algorithm
 * [Helgrind+](http://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5160998)
 * [ThreadSanitizer](http://www.australianscience.com.au/research/google/35604.pdf)
 * [Acculock](http://www.cse.unsw.edu.au/~jingling/papers/cgo11-xie.pdf)
 * [MultiLock-HB](http://www.cse.unsw.edu.au/~jingling/papers/spe13.pdf)
 * [SimpleLock](http://pdcat13.csie.ntust.edu.tw/download/papers/P10017.pdf)
 * [SimpleLock+](http://comjnl.oxfordjournals.org/content/early/2014/11/10/comjnl.bxu119.full.pdf)
+
+### 1.4 Parallel algorithm
+* The above pre dynamic data race detection algorithm can all be executed parallel. If you want to speed up the detection progress, you can set the *parallel_detector_number* to the value greater than 0.
 
 ## 2. Hybrid data race detectors
 According to the results of the static data racedetectors, we can reduce the complexity of the dynamic binary instrumentation and only monitor the potential race points. We accept the static results which are formatted like instrumented\_lines\_\*\_.out and static\_profile\_\*\_.out files in the static_profile/dir. We currently only use the RELAY as the static race detector. We combine the implemented dynamic race detectors to discover the data race.
