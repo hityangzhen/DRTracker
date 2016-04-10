@@ -64,6 +64,9 @@ void Profiler::HandlePreSetup()
 
 	// pre_group_analyzer_=new PreGroup();
 	// pre_group_analyzer_->Register();	
+
+	prl_vrf_ml_analyzer_=new ParallelVerifierMl();
+	prl_vrf_ml_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -166,6 +169,16 @@ void Profiler::HandlePostSetup()
 	// 	pre_group_analyzer_->Setup(CreateMutex(),prace_db_);
 	// 	AddAnalyzer(pre_group_analyzer_);
 	// }
+
+	if(prl_vrf_ml_analyzer_->Enabled()) {
+		LoadPStmts();
+		prl_vrf_ml_analyzer_->SetTlsKey(app_thd_key);
+		prl_vrf_ml_analyzer_->SetParallelVerifierNumber(knob_->ValueInt(
+			"parallel_verifier_number"));
+		prl_vrf_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
+			race_db_,prace_db_);
+		AddAnalyzer(prl_vrf_ml_analyzer_);
+	}
 	//==============================end============================
 }
 
@@ -232,6 +245,9 @@ void Profiler::HandleProgramExit()
 	// pre_group_analyzer_->Export();
 	// delete pre_group_analyzer_;
 	// delete prace_db_;
+
+	delete prl_vrf_ml_analyzer_;
+	delete prace_db_;
 	//==============================end============================	
 
 	//======================parallel detection=====================
@@ -244,39 +260,91 @@ void Profiler::HandleProgramExit()
 
 void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 {
-	//create a new detector for each detection thread
-	Detector *dtc=new MultiLockHb;
-	LockKernel();
-	dtc->Register();
-	//here we not firstly register the enable_djit in the HandlePreStepup,
-	//so do not need to use the Enabled(); otherwise, can update the originl
-	//value to 0
-	dtc->Setup(CreateMutex(),race_db_);
-	UnlockKernel();
-	if(unit_size_==0)
-		unit_size_=dtc->GetUnitSize();
-	//get the eventbase from the queue
+	// //create a new detector for each detection thread
+	// Detector *dtc=new MultiLockHb;
+	// LockKernel();
+	// dtc->Register();
+	// //here we not firstly register the enable_djit in the HandlePreStepup,
+	// //so do not need to use the Enabled(); otherwise, can update the originl
+	// //value to 0
+	// dtc->Setup(CreateMutex(),race_db_);
+	// UnlockKernel();
+	// if(unit_size_==0)
+	// 	unit_size_=dtc->GetUnitSize();
+	// //get the eventbase from the queue
+	// while(true) {
+	// 	EventBase *eb=GetEventBase(thd_id);
+	// 	if(eb==NULL) {
+	// 		goto fini;			
+	// 	}
+	// 	else {
+	// 		Detector::EventHandle eh=dtc->GetEventHandle(eb->name());
+	// 		if(eh==NULL)
+	// 			goto fini;
+	// 		else {
+	// 			// INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
+	// 			(*eh)(dtc,eb); //execute the event handle
+	// 			goto fini;
+	// 		}
+	// 	}
+	// 	fini:
+	// 		if(IsProcessExiting() && DetectionDequeEmpty(thd_id))
+	// 			break;
+	// }
+	// delete dtc;
+	// ATOMIC_ADD_AND_FETCH(&exit_num_,1);
+	// ExitThread(0);
+}
+
+void Profiler::HandleCreateVerificationThread(thread_t thd_id)
+{
+	//we assume the first internal thread is the verication thread
+	static int count=0;
+	if(++count==1)
+		StartWaitVerification();
+	else
+		StartHistoryDetection(thd_id);
+}
+
+void Profiler::StartWaitVerification()
+{
 	while(true) {
-		EventBase *eb=GetEventBase(thd_id);
-		if(eb==NULL) {
-			goto postponed;			
-		}
+		ParallelVerifierMl::VerifyRequest *req=prl_vrf_ml_analyzer_->
+			GetVerifyRequest();
+		if(req==NULL)
+			goto fini;
 		else {
-			Detector::EventHandle eh=dtc->GetEventHandle(eb->name());
-			if(eh==NULL)
-				goto postponed;
-			else {
-				// INFO_FMT_PRINT("============event name:[%s]==========\n",eb->name().c_str());
-				(*eh)(dtc,eb); //execute the event handle
-				goto postponed;
-			}
+			//after each wait verification, a historical detection request
+			//will be sent to the corresponding thread
+			prl_vrf_ml_analyzer_->ProcessReadOrWrite(req);
+			//after processing the request
+			prl_vrf_ml_analyzer_->PopVerifyRequest();
+			prl_vrf_ml_analyzer_->ClearVerifyRequest(req);
 		}
-		postponed:
-			if(IsProcessExiting() && DetectionDequeEmpty(thd_id))
-				break;
+	fini:
+		if(IsProcessExiting() && prl_vrf_ml_analyzer_->VerifyRequestQueueEmpty())
+			break;
 	}
-	delete dtc;
-	ATOMIC_ADD_AND_FETCH(&exit_num_,1);
+	ExitThread(0);
+}
+
+void Profiler::StartHistoryDetection(thread_t thd_id)
+{
+	prl_vrf_ml_analyzer_->CreateHtyDtcRequestQueue(thd_id);
+	while(true) {
+		ParallelVerifierMl::HtyDtcRequest *req=prl_vrf_ml_analyzer_->
+			PopHtyDtcRequest(thd_id);
+		if(req==NULL)
+			goto fini;
+		else {
+			prl_vrf_ml_analyzer_->HistoryDetection(req);
+			//after processing the request
+			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
+		}
+	fini:
+		if(IsProcessExiting() && prl_vrf_ml_analyzer_->HtyDtcRequestQueueEmpty(thd_id))
+			break;
+	}
 	ExitThread(0);
 }
 

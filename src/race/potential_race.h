@@ -52,6 +52,12 @@ public:
 				delete iter->second;
 		}
 
+		// for(PStmtMap::iterator iter=vrf_pstmt_map_.begin();iter!=vrf_pstmt_map_.end();
+		// 	iter++) {
+		// 	if(iter->second)
+		// 		delete iter->second;
+		// }		
+
 		for(PStmtSet::iterator iter=pstmt_set_.begin();iter!=pstmt_set_.end();
 			iter++) {
 			if(iter->second)
@@ -108,6 +114,24 @@ public:
 			pstmt_map_[second_pstmt]=new PRlvStmtSet;
 		pstmt_map_[second_pstmt]->insert(first_pstmt);
 	}
+
+	// void BuildVerifiedRelationMapping(PStmt *first_pstmt,PStmt *second_pstmt) {
+	// 	if(vrf_pstmt_map_.find(first_pstmt)==vrf_pstmt_map_.end())
+	// 		vrf_pstmt_map_[first_pstmt]=new PRlvStmtSet;
+	// 	if(vrf_pstmt_map_.find(second_pstmt)==vrf_pstmt_map_.end())
+	// 		vrf_pstmt_map_[second_pstmt]=new PRlvStmtSet;
+	// 	vrf_pstmt_map_[first_pstmt]->insert(second_pstmt);
+	// 	if(first_pstmt!=second_pstmt)
+	// 		vrf_pstmt_map_[second_pstmt]->insert(first_pstmt);
+	// }
+
+	// bool IsVerifiedRelationMapping(PStmt *first_pstmt,PStmt *second_pstmt) {
+	// 	if(vrf_pstmt_map_.find(first_pstmt)!=vrf_pstmt_map_.end())
+	// 		return vrf_pstmt_map_[first_pstmt]->find(second_pstmt);
+	// 	else if(vrf_pstmt_map_.find(second_pstmt)!=vrf_pstmt_map_.end())
+	// 		return vrf_pstmt_map_[second_pstmt]->find(first_pstmt);
+	// 	return false;
+	// }
 
 	bool SecondPotentialStatement(PStmt *first_pstmt,PStmt *second_pstmt) {
 		if(pstmt_map_.find(first_pstmt)==pstmt_map_.end())
@@ -193,9 +217,9 @@ private:
 		key += line;
 		return key;
 	}
-
-	PStmtMap pstmt_map_;
 	PStmtSet pstmt_set_;
+	PStmtMap pstmt_map_;
+	// PStmtMap vrf_pstmt_map_;
 };
 
 } //namespace race

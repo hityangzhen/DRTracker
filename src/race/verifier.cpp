@@ -76,7 +76,7 @@ void Verifier::Register()
 	knob_->RegisterInt("unit_size_","the mornitoring granularity in bytes","4");
 	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","10");
 	knob_->RegisterBool("history_race_analysis","whether do the history race"
-		" analysis","1");
+		" analysis","0");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
@@ -138,6 +138,7 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 		VectorClock *parent_vc=thd_vc_map_[parent_thd_id];
 		DEBUG_ASSERT(parent_vc);
 		curr_vc->Join(parent_vc);
+		parent_vc->Increment(parent_thd_id);
 	}
 	thd_vc_map_[curr_thd_id]=curr_vc;
 	//thread semaphore
@@ -192,10 +193,7 @@ void Verifier::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 
 void Verifier::AfterPthreadCreate(thread_t curr_thd_id,timestamp_t curr_thd_clk,
   	Inst *inst,thread_t child_thd_id)
-{
-	ScopedLock lock(internal_lock_);
-	thd_vc_map_[curr_thd_id]->Increment(curr_thd_id);
-}
+{ }
 
 void Verifier::AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     Inst *inst, size_t size, address_t addr)
@@ -230,14 +228,14 @@ void Verifier::BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 void Verifier::BeforeMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr,size_t size)
 {
-	ChooseRandomThreadBeforeExecute(addr,curr_thd_id);
+	ChooseRandomThreadBeforeProcess(addr,curr_thd_id);
 	ProcessReadOrWrite(curr_thd_id,inst,addr,size,RACE_EVENT_READ);
 }
 
 void Verifier::BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr,size_t size)
 {
-	ChooseRandomThreadBeforeExecute(addr,curr_thd_id);
+	ChooseRandomThreadBeforeProcess(addr,curr_thd_id);
 	ProcessReadOrWrite(curr_thd_id,inst,addr,size,RACE_EVENT_WRITE);
 }
 
@@ -538,7 +536,7 @@ void Verifier::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 /**
  * multi-threaded region
  */
-void Verifier::ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_id)
+void Verifier::ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id)
 {
 	if(FilterAccess(addr))	
 		return ;
@@ -560,6 +558,7 @@ void Verifier::ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_
 void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 	size_t size,RaceEventType type)
 {
+// INFO_FMT_PRINT("=========process read or write start:[%lx]=========\n",curr_thd_id);
 	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 	//get the potential statement
@@ -584,6 +583,7 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 			first_pstmts.insert(iter->first);
 		}
 	}
+	timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
 	//first accessed stmt of the potentail stmt pair,needed to be postponed 
 	if(first_pstmts.empty()) {
 		//indicate all the same meta snapshot
@@ -595,8 +595,6 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			Meta *meta=GetMeta(iaddr);
 			DEBUG_ASSERT(meta);
-			timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->
-				GetClock(curr_thd_id);
 			pstmt_metas_map_[pstmt]->insert(meta);
 			// thd_metas_map_[curr_thd_id]->insert(meta);
 			thd_ppmetas_map_[curr_thd_id]->insert(meta);
@@ -618,19 +616,34 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 			return ;
 		}
 	} else {
+		bool redudant_flag=true;
+		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+			Meta *meta=GetMeta(iaddr);
+			DEBUG_ASSERT(meta);
+			if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
+				continue;
+			redudant_flag=false;
+		}
 		//accumulate postponed threads
 		std::map<thread_t,bool> pp_thd_map;
-		// PostponeThreadSet pp_thds;
-		for(PStmtSet::iterator iter=first_pstmts.begin();
-			iter!=first_pstmts.end();iter++) {
-			PStmt *first_pstmt=*iter;
-			RacedMeta(first_pstmt,start_addr,end_addr,pstmt,inst,curr_thd_id,
-				type,pp_thd_map);
+		VERIFY_RESULT res=NONE_SHARED;
+		if(!redudant_flag) {
+			// PostponeThreadSet pp_thds;
+			for(PStmtSet::iterator iter=first_pstmts.begin();
+				iter!=first_pstmts.end();iter++) {
+				PStmt *first_pstmt=*iter;
+				res=WaitVerificationAndHistoryDetection(first_pstmt,
+					start_addr,end_addr,pstmt,inst,curr_thd_id,type,pp_thd_map);
+			}
 		}
 		if(!pp_thd_map.empty()) {
 			HandleRace(pp_thd_map,curr_thd_id);
-		}else
-			HandleNoRace(curr_thd_id);
+		}else {
+			if(res==REDUDANT || res==NONE_SHARED)
+				KeepupThread(curr_thd_id);
+			else
+				HandleNoRace(curr_thd_id);
+		}
 	}
 // INFO_FMT_PRINT("=========process read or write end:[%lx]=========\n",curr_thd_id);
 }
@@ -732,7 +745,7 @@ inline void Verifier::ProcessFree(Meta *meta)
 	delete meta;
 }
 
-inline void Verifier::ProcessPreMutexLock(thread_t curr_thd_id,
+void Verifier::ProcessPreMutexLock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	thread_t thd_id=mutex_meta->GetOwner();
@@ -747,7 +760,7 @@ inline void Verifier::ProcessPreMutexLock(thread_t curr_thd_id,
 	}
 }
 
-inline void Verifier::ProcessPostMutexLock(thread_t curr_thd_id,
+void Verifier::ProcessPostMutexLock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	//set the vector clock
@@ -760,7 +773,7 @@ inline void Verifier::ProcessPostMutexLock(thread_t curr_thd_id,
 	UnblockThread(curr_thd_id);
 }
 
-inline void Verifier::ProcessPreMutexUnlock(thread_t curr_thd_id,
+void Verifier::ProcessPreMutexUnlock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	//set the vector clock
@@ -769,13 +782,13 @@ inline void Verifier::ProcessPreMutexUnlock(thread_t curr_thd_id,
 	curr_vc->Increment(curr_thd_id);
 }
 
-inline void Verifier::ProcessPostMutexUnlock(thread_t curr_thd_id,
+void Verifier::ProcessPostMutexUnlock(thread_t curr_thd_id,
 	MutexMeta *mutex_meta)
 {
 	mutex_meta->SetOwner(0);
 }
 
-inline void Verifier::ProcessPreRwlockRdlock(thread_t curr_thd_id,
+void Verifier::ProcessPreRwlockRdlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	thread_t wrlock_thd_id=rwlock_meta->GetWrlockOwner();
@@ -789,7 +802,7 @@ inline void Verifier::ProcessPreRwlockRdlock(thread_t curr_thd_id,
 	}
 }
 
-inline void Verifier::ProcessPostRwlockRdlock(thread_t curr_thd_id,
+void Verifier::ProcessPostRwlockRdlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	//set the vector clock
@@ -801,7 +814,7 @@ inline void Verifier::ProcessPostRwlockRdlock(thread_t curr_thd_id,
 	rwlock_meta->ref++;
 }
 
-inline void Verifier::ProcessPreRwlockWrlock(thread_t curr_thd_id,
+void Verifier::ProcessPreRwlockWrlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	RwlockMeta::ThreadSet *rdlock_thd_set=rwlock_meta->GetRdlockOwners();
@@ -819,7 +832,7 @@ inline void Verifier::ProcessPreRwlockWrlock(thread_t curr_thd_id,
 	}
 }
   	
-inline void Verifier::ProcessPostRwlockWrlock(thread_t curr_thd_id,
+void Verifier::ProcessPostRwlockWrlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	UnblockThread(curr_thd_id);
@@ -831,7 +844,7 @@ inline void Verifier::ProcessPostRwlockWrlock(thread_t curr_thd_id,
 	rwlock_meta->ref++;
 }
 
-inline void Verifier::ProcessPreRwlockUnlock(thread_t curr_thd_id,
+void Verifier::ProcessPreRwlockUnlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
@@ -846,7 +859,7 @@ inline void Verifier::ProcessPreRwlockUnlock(thread_t curr_thd_id,
 	curr_vc->Increment(curr_thd_id);
 }
 
-inline void Verifier::ProcessPostRwlockUnlock(thread_t curr_thd_id,
+void Verifier::ProcessPostRwlockUnlock(thread_t curr_thd_id,
 	RwlockMeta *rwlock_meta)
 {
 	//we do not know rdlock or wrlock
@@ -876,8 +889,7 @@ inline void Verifier::ProcessFree(SemMeta *sem_meta)
 
 /**
  * handle cond_signal and cond_broadcast
- */
-inline 
+ */ 
 void Verifier::ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta)
 {
 	VectorClock *curr_vc=thd_vc_map_[curr_thd_id];
@@ -943,7 +955,7 @@ void Verifier::HandleRace(std::map<thread_t,bool> &pp_thd_map,
 /**
  * do not postpone the thread
  */
-inline void Verifier::KeepupThread(thread_t curr_thd_id)
+void Verifier::KeepupThread(thread_t curr_thd_id)
 {
 	ClearPostponedThreadMetas(curr_thd_id);
 	VerifyUnlock();
@@ -992,19 +1004,20 @@ void Verifier::PostponeThread(thread_t curr_thd_id)
 // INFO_FMT_PRINT("=================after wait:[%lx]===================\n",curr_thd_id);
 }
 
-void Verifier::ChooseRandomThreadAfterAllUnavailable()
+thread_t Verifier::ChooseRandomThreadAfterAllUnavailable()
 {
 	if(pp_thd_set_.empty())
-		return ;
+		return 0;
 	thread_t thd_id=RandomThread(pp_thd_set_);
 //INFO_FMT_PRINT("=================needed to wakeup:[%lx]===================\n",thd_id);
-	DEBUG_ASSERT(thd_smp_map_[thd_id]);
+	// DEBUG_ASSERT(thd_smp_map_[thd_id]);
 	// if(thd_smp_map_[thd_id]->IsWaiting())
 	// 	thd_smp_map_[thd_id]->Post();
 	WakeUpPostponeThread(thd_id);
+	return thd_id;
 }
 
-inline void Verifier::WakeUpPostponeThread(thread_t thd_id)
+void Verifier::WakeUpPostponeThread(thread_t thd_id)
 {
 	thd_smp_map_[thd_id]->Post();
 	// pp_thd_set_.erase(thd_id);
@@ -1025,9 +1038,10 @@ void Verifier::WakeUpPostponeThreadSet(PostponeThreadSet &pp_thds)
 	}
 }
 
-inline
+
 void Verifier::ClearPostponedThreadMetas(thread_t curr_thd_id) {
-	if(thd_ppmetas_map_.find(curr_thd_id)==thd_ppmetas_map_.end())
+	if(thd_ppmetas_map_.find(curr_thd_id)==thd_ppmetas_map_.end() ||
+		thd_ppmetas_map_[curr_thd_id]->empty())
 		return ;
 	MAP_KEY_NOTFOUND_NEW(thd_metas_map_,curr_thd_id,MetaSet);
 	std::copy(thd_ppmetas_map_[curr_thd_id]->begin(),
@@ -1038,7 +1052,7 @@ void Verifier::ClearPostponedThreadMetas(thread_t curr_thd_id) {
 	thd_ppmetas_map_.erase(curr_thd_id);
 }
 
-inline 
+ 
 void Verifier::ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas)
 {
 	DEBUG_ASSERT(pstmt && metas);
@@ -1059,9 +1073,10 @@ void Verifier::ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas)
 /**
  * pp_thds contains result of the raced postponed threads
  */
-void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
-	address_t end_addr,PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,
-	RaceEventType type,std::map<thread_t,bool> &pp_thd_map)
+Verifier::VERIFY_RESULT 
+Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
+	address_t start_addr,address_t end_addr,PStmt *second_pstmt,Inst *inst,
+	thread_t curr_thd_id,RaceEventType type,std::map<thread_t,bool> &pp_thd_map)
 {
 	// if(pstmt_metas_map_.find(first_pstmt)==pstmt_metas_map_.end() || 
 	// 	pstmt_metas_map_[first_pstmt]==NULL)
@@ -1073,12 +1088,15 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 	MetaSet *second_metas=pstmt_metas_map_[second_pstmt];
 	PostponeThreadSet tmp_pp_thds;
 	bool flag=false;
+	VERIFY_RESULT res=NONE_SHARED;
  	timestamp_t curr_thd_clk=thd_vc_map_[curr_thd_id]->GetClock(curr_thd_id);
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 		Meta *meta=GetMeta(iaddr);
-		if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
-			continue;
+		// if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst)) {
+		// 	res=REDUDANT;
+		// 	continue;
+		// }
 		//corresponding pstmt access the shared meta
 		if(first_metas->find(meta)!=first_metas->end()) {
 
@@ -1096,10 +1114,13 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 
 					//filter irrelevant postponed thread or raced inst pair
 					if(meta_ss->pstmt!=first_pstmt ||
-						meta->RacedInstPair(meta_ss->inst,inst))
-						continue ;
+						meta->RacedInstPair(meta_ss->inst,inst)) {
+						res=REDUDANT;
+						continue ;						
+					}
 					if(type==RACE_EVENT_WRITE) {
 						flag=true;
+						res=RACY;
 						tmp_pp_thds.insert(iter->first);
 						if(meta_ss->type==RACE_EVENT_WRITE) {
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
@@ -1118,6 +1139,7 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 					else if(type==RACE_EVENT_READ) {
 						if(meta_ss->type==RACE_EVENT_WRITE) {
 							flag=true;
+							res=RACY;
 							tmp_pp_thds.insert(iter->first);
 							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
@@ -1125,6 +1147,9 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
 							meta->AddRacedInstPair(meta_ss->inst,inst);
+						}
+						else {
+							res=SHARED_READ;
 						}
 					}// else if(type==RACE_EVENT_READ)
 				}
@@ -1182,6 +1207,9 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 				}
 			}// detect the history raced metas
  		}// corresponding pstmt access the shared meta
+ 		else {
+ 			res=NONE_SHARED;
+ 		}
  		//add current thread's snapshot
  		AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,second_pstmt);
 		DEBUG_ASSERT(second_metas);
@@ -1215,6 +1243,7 @@ void Verifier::RacedMeta(PStmt *first_pstmt,address_t start_addr,
 			pp_thd_map[curr_thd_id]=false;
 		}
 	}
+	return res;
 }
 
 void Verifier::PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,

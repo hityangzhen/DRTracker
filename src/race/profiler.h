@@ -21,6 +21,7 @@
 #include "race/verifier_sl.h"
 #include "race/verifier_ml.h"
 #include "race/pre_group.h"
+#include "race/parallel_verifier_ml.h"
 
 namespace race{
 
@@ -45,6 +46,7 @@ public:
 			verifier_sl_analyzer_(NULL),
 			verifier_ml_analyzer_(NULL),
 			pre_group_analyzer_(NULL),
+			prl_vrf_ml_analyzer_(NULL),
 			exit_num_(0),exit_flag_(0),unit_size_(0)
 	{}
 	~Profiler() {}
@@ -54,6 +56,7 @@ protected:
 	bool HandleIgnoreMemAccess(IMG img);
 	void HandleProgramExit();
 	void HandleCreateDetectionThread(thread_t thd_id);
+	void HandleCreateVerificationThread(thread_t thd_id);
 	address_t GetUnitSize() { return unit_size_; }
 	//======================data race detection=====================
 	RaceDB *race_db_;
@@ -78,6 +81,7 @@ protected:
 	VerifierSl *verifier_sl_analyzer_;
 	VerifierMl *verifier_ml_analyzer_;
 	PreGroup *pre_group_analyzer_;
+	ParallelVerifierMl *prl_vrf_ml_analyzer_;
 	//==============================end============================	
 	volatile size_t exit_num_;
 	volatile unsigned exit_flag_;
@@ -85,6 +89,8 @@ protected:
 private:
 	void LoadPStmts();
 	void LoadPStmts2();
+	void StartWaitVerification();
+	void StartHistoryDetection(thread_t thd_id);
 	DISALLOW_COPY_CONSTRUCTORS(Profiler);
 };
 } //namespace race

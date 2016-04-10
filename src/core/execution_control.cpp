@@ -45,6 +45,8 @@ void ExecutionControl::PreSetup()
 		" static_profile","0");
 	knob_->RegisterInt("parallel_detector_number","the number of the parallel detector"
 		" threads","0");
+	knob_->RegisterInt("parallel_verifier_number","the number of the paralle verifier"
+		" threads","0");
 
 	debug_analyzer_=new DebugAnalyzer;
 	debug_analyzer_->Register();
@@ -114,11 +116,14 @@ void ExecutionControl::PostSetup()
 	}
 
 	HandlePostSetup();
+	if(GetParallelDetectorNumber()>0) {
+		ParallelDetectionThread();
+	}
 
-	// if(GetParallelDetectorNumber()>0) {
-	// 	ParallelDetectionThread();
-	// }
-
+	if(GetParallelVerifierNumber()>0) {
+		ParallelVerificationThread();
+	}
+	
 	//Setup call stack info if needed.
 	if(desc_.TrackCallStack()) {
 		callstack_info_=new CallStackInfo(CreateMutex());
@@ -468,6 +473,15 @@ void ExecutionControl::CreateDetectionThread(VOID *v)
 	HandleCreateDetectionThread(curr_thd_id);
 }
 
+void ExecutionControl::CreateVerificationThread(VOID *v)
+{
+	LockKernel();
+	thread_t curr_thd_id=PIN_ThreadUid();
+	vrf_thd_set_.insert(curr_thd_id);
+	UnlockKernel();
+	HandleCreateVerificationThread(curr_thd_id);
+}
+
 void ExecutionControl::ParallelDetectionThread()
 {
 	int prl_dtc_num=GetParallelDetectorNumber();
@@ -481,9 +495,34 @@ void ExecutionControl::ParallelDetectionThread()
 	}
 }
 
+void ExecutionControl::ParallelVerificationThread()
+{
+	//currently we only allow the one verification thread and parallel 
+	//historical detection threads
+	int prl_vrf_num=GetParallelVerifierNumber();
+	if(prl_vrf_num>0) {
+		for(int i=0;i<prl_vrf_num+1;i++) {
+			if(SpawnInternalThread(__CreateVerificationThread,NULL,0,NULL)
+				==INVALID_THREADID)
+				Abort("Can not spawn internal thread.\n");
+		}
+	}
+	//only contains a verification thread
+	else if(prl_vrf_num<0) {
+		if(SpawnInternalThread(__CreateVerificationThread,NULL,0,NULL)
+			==INVALID_THREADID)
+			Abort("Can not spawn internal thread.\n");
+	}
+}
+
 int ExecutionControl::GetParallelDetectorNumber()
 {
 	return knob_->ValueInt("parallel_detector_number");
+}
+
+int ExecutionControl::GetParallelVerifierNumber()
+{
+	return knob_->ValueInt("parallel_verifier_number");
 }
 
 void ExecutionControl::PushEventBufferToDetectionDeque(thread_t thd_uid,
@@ -564,6 +603,23 @@ void ExecutionControl::FiniUnlocked(INT32 code,VOID *v)
 		}
 		if(!thd_exit_status)
 			Abort("At least one of the detection threads exit abnormally.\n");
+	}
+	if(GetParallelVerifierNumber()>0) {
+		//wait for the termination of the verification threads
+		BOOL wait_status;
+		INT32 thd_exit_code;
+		BOOL thd_exit_status=TRUE;
+		for(std::set<thread_t>::iterator iter=vrf_thd_set_.begin();
+			iter!=vrf_thd_set_.end();iter++) {
+			wait_status=PIN_WaitForThreadTermination(*iter,PIN_INFINITE_TIMEOUT,
+				&thd_exit_code);
+			if(!wait_status)
+				Abort("PIN_WaitForThreadTermination failed.\n");
+			if(thd_exit_code!=0)
+				thd_exit_status=FALSE;
+		}
+		if(!thd_exit_status)
+			Abort("At least one of the verification threads exit abnormally.\n");	
 	}
 }
 //Register a notification function that is called when a thread starts executing in the 

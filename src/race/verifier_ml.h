@@ -13,11 +13,11 @@ class VerifierMl:public Verifier{
 public:
 	typedef std::tr1::unordered_map<thread_t,LockSet *> ThreadLockSetMap;
 	VerifierMl();
-	~VerifierMl();
-	void Register();
-	bool Enabled();
+	virtual ~VerifierMl();
+	virtual void Register();
+	virtual bool Enabled();
 
-private:
+protected:
 	class MlMetaSnapshot:public MetaSnapshot {
 	public:
 		MlMetaSnapshot(timestamp_t clk,RaceEventType t,Inst *i,PStmt *s):
@@ -36,7 +36,7 @@ private:
 	ThreadLockSetMap thd_ls_map_;
 	//for rd_lock
 	ThreadLockSetMap thd_rdls_map_;
-private:
+protected:
 	//overrite
 	Meta *GetMeta(address_t addr);
 

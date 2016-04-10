@@ -116,7 +116,6 @@
 		PIN_AddThreadStartFunction(I_ThreadStart,NULL);							\
 		PIN_AddThreadFiniFunction(I_ThreadExit,NULL);							\
 		ctrl->app_thd_key=PIN_CreateThreadDataKey(0);							\
-		ctrl->ParallelDetectionThread();										\
 		I_ProgramStart();														\
 		PIN_StartProgram();														\
 	}																				
@@ -217,10 +216,17 @@ public:
 	typedef std::map<thread_t,EventDeque *> EventDequeTable;
 	typedef std::map<thread_t,Mutex *> EventDequeLockTable;
 	typedef std::map<thread_t,EventBuffer *> EventBufferTable;
+	//parallel detection
 	void ParallelDetectionThread();	
 	void CreateDetectionThread(VOID *);
 	static void __CreateDetectionThread(VOID *v) {
 		ctrl_->CreateDetectionThread(v);
+	}
+	//parallel verification
+	void ParallelVerificationThread();
+	void CreateVerificationThread(VOID *);
+	static void __CreateVerificationThread(VOID *v) {
+		ctrl_->CreateVerificationThread(v);
 	}
 	static TLS_KEY app_thd_key;
 protected:
@@ -235,6 +241,7 @@ protected:
 	virtual void HandlePreSetup();
 	virtual void HandlePostSetup();
 	virtual void HandleCreateDetectionThread(thread_t thd_id) {}
+	virtual void HandleCreateVerificationThread(thread_t thd_id) {}
 	virtual bool HandleIgnoreInstCount(IMG) {return true;}
 	virtual bool HandleIgnoreMemAccess(IMG img) { return false; }
 	virtual void HandlePreInstrumentTrace(TRACE trace);
@@ -285,7 +292,7 @@ protected:
   	void ReplacePthreadCreateWrapper(IMG img);
   	void ReplacePthreadWrappers(IMG img);
   	void ReplaceMallocWrappers(IMG img);
-
+  	//parallel detection
   	EventBase *GetEventBase(thread_t thd_id);
   	bool DetectionDequeEmpty(thread_t thd_id);
   	virtual address_t GetUnitSize() { return 0; }
@@ -293,6 +300,8 @@ protected:
   	void PushEventBufferToDetectionDeque(thread_t thd_uid,EventBuffer *buff);
   	void PushEventToDetectionDeque(thread_t thd_uid,EventBase *eb);
   	int GetParallelDetectorNumber();
+  	//parallel verification
+  	int GetParallelVerifierNumber();
 
   	Mutex *kernel_lock_;
  	Knob *knob_;
@@ -325,6 +334,8 @@ protected:
  	EventDeque pre_event_deq_;
  	EventDequeTable thd_deq_table_;
  	EventDequeLockTable thd_deqlk_table_;
+
+ 	std::set<thread_t> vrf_thd_set_;
  	static ExecutionControl *ctrl_;
 
  private:

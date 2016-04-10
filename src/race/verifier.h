@@ -24,7 +24,7 @@ namespace race
 #define MAP_KEY_NOTFOUND_NEW(map,key,value_type) \
 	if((map).find(key)==(map).end() || (map)[key]==NULL) \
 		(map)[key]=new value_type
-
+	
 class Verifier:public Analyzer {
 protected:
 	//limit the snapshot vector length
@@ -192,6 +192,12 @@ protected:
 		int8 count; //should consider negative
 	};
 
+	typedef enum {
+		NONE_SHARED,
+		REDUDANT,
+		RACY,
+		SHARED_READ
+	} VERIFY_RESULT;
 public:
 	typedef std::set<thread_t> PostponeThreadSet;
 	typedef std::tr1::unordered_set<Meta *> MetaSet;
@@ -384,13 +390,13 @@ protected:
 		race_db_->CreateRace(meta->addr,t0,i0,p0,t1,i1,p1,false);
 	}
 	
-	void ChooseRandomThreadBeforeExecute(address_t addr,thread_t curr_thd_id);
-	void ChooseRandomThreadAfterAllUnavailable();
+	void ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id);
+	thread_t ChooseRandomThreadAfterAllUnavailable();
 	void ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 		size_t size,RaceEventType type);
-	void RacedMeta(PStmt *first_pstmt,address_t start_addr,address_t end_addr,
-		PStmt *second_pstmt,Inst *inst,thread_t curr_thd_id,RaceEventType type,
-		std::map<thread_t,bool> &pp_thd_map);
+	VERIFY_RESULT WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
+		address_t start_addr,address_t end_addr,PStmt *second_pstmt,Inst *inst,
+		thread_t curr_thd_id,RaceEventType type,std::map<thread_t,bool> &pp_thd_map);
 	//wrapper function
 	virtual void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s) {
@@ -435,7 +441,6 @@ protected:
 	RaceDB *race_db_;
 	PRaceDB *prace_db_;
 	RegionFilter *filter_;
-
 	static address_t unit_size_;
 	static bool history_race_analysis_;
 	//random thread id
@@ -467,7 +472,6 @@ protected:
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };
-
 }// namespace race
 
 #endif //__RACE_VERIFIER_H

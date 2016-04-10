@@ -76,3 +76,18 @@ void Sleep(UINT32 milliseconds)
 {
 	PIN_Sleep(milliseconds);
 }
+
+bool SetThreadData(TLS_KEY key,const VOID *data,THREADID thread_id)
+{
+	return PIN_SetThreadData(key,data,thread_id);
+}
+
+void *GetThreadData(TLS_KEY key,THREADID thread_id)
+{
+	return PIN_GetThreadData(key,thread_id);
+}
+
+thread_t GetThreadId()
+{
+	return PIN_ThreadId();
+}

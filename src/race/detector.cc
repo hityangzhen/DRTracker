@@ -224,7 +224,7 @@ void Detector::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 		VectorClock *parent_vc=curr_vc_map_[parent_thd_id];
 		DEBUG_ASSERT(parent_vc);
 		curr_vc->Join(parent_vc);
-		//parent_vc->Increment(parent_thd_id);
+		parent_vc->Increment(parent_thd_id);
 	}
 	curr_vc_map_[curr_thd_id]=curr_vc;
 	//init atomic map
@@ -393,10 +393,7 @@ void Detector::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 
 void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
 	Inst *inst,thread_t childThdId) 
-{
-	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
-	curr_vc_map_[currThdId]->Increment(currThdId);
-}
+{ }
 
 void Detector::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target)

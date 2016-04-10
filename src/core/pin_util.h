@@ -33,5 +33,11 @@ extern bool IsProcessExiting();
 //Terminate the current thread,This function is intended for threads 
 //created by the tool (see PIN_SpawnInternalThread())
 extern void ExitThread(INT32 exitCode);
-#endif /* __PIN_UTIL_H */
 
+extern bool SetThreadData(TLS_KEY key,const VOID *data,THREADID thread_id);
+
+extern void *GetThreadData(TLS_KEY key,THREADID thread_id);
+
+extern thread_t GetThreadId();
+
+#endif /* __PIN_UTIL_H */
