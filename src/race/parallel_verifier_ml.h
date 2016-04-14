@@ -154,7 +154,7 @@ protected:
 	void ProcessPostRwlockWrlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
 	void ProcessPreRwlockUnlock(thread_t curr_thd_id,RwlockMeta *rwlock_meta);
 	void ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta);
-
+	PStmt *GetFirstPStmtSet(thread_t curr_thd_id,Inst *inst,PStmtSet &first_pstmts);
 	void ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 		size_t size,RaceEventType type);
 	void WakeUpPostponeThread(thread_t thd_id);

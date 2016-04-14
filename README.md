@@ -24,7 +24,7 @@ We only implemented the kernel algorithm.
 * [SimpleLock+](http://comjnl.oxfordjournals.org/content/early/2014/11/10/comjnl.bxu119.full.pdf)
 
 ### 1.4 Parallel algorithm
-* The above pre dynamic data race detection algorithm can all be executed parallel. If you want to speed up the detection progress, you can set the *parallel_detector_number* to the value greater than 0.
+The above pure dynamic data race detection algorithm can all be executed parallel. If you want to speed up the detection progress, you can set *<font color=#0099ff>parallel_detector_number</font>* to the value greater than 0.
 
 ## 2. Hybrid data race detectors
 According to the results of the static data racedetectors, we can reduce the complexity of the dynamic binary instrumentation and only monitor the potential race points. We accept the static results which are formatted like instrumented\_lines\_\*\_.out and static\_profile\_\*\_.out files in the static_profile/dir. We currently only use the RELAY as the static race detector. We combine the implemented dynamic race detectors to discover the data race.
@@ -34,6 +34,9 @@ Similarly, we use the results of the static race detector and instrument the del
 
 ## 4. Hybrid data race verifier and historical race detector
 At the basis of the verifier, we incur the pure dynamic race detection ideas to make up for the missed races.
+
+### 4.1 Parallel verification and detection
+The above algorithm can be executed parallel. If you want to speed up the verification and detection progress, you can set *<font color=#0099ff>parallel_verifier_number</font>* to the value greater than 0(indicates that there are one verification thread and more historical detection thread), or you can set the value less than 0(indicates that there are only one verification thread and no historical detection thread).
 
 ## 5. Hybrid data race pruner
 According to the results of the verifier and historical detector, we firstly use the static analysis techniques to accumulate the ad-hoc synchronization information (we can identify the most common potential ad-hoc synchronization that is between the remote write and the spinning read loop). And then we use the pure dynamic data race detector to identify the ad-hoc synchronizations so as to prune the benign and false races.

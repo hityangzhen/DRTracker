@@ -292,31 +292,33 @@ void ParallelVerifierMl::ProcessReadOrWrite(VerifyRequest *req)
 	ProcessReadOrWrite(req->thd_id,req->inst,req->addr,req->size,req->type);
 }
 
-void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
-	address_t addr,size_t size,RaceEventType type)
+/**
+  * Get the parters of the current pstmt which are involved in the pstmt
+  * pair data base.
+  * This function need synchronization.
+  * @param first_pstmts A set contains the parter pstmt
+  * @return the pstmt or NULL if it is not expected
+  */
+PStmt *ParallelVerifierMl::GetFirstPStmtSet(thread_t curr_thd_id,Inst *inst,
+	PStmtSet &first_pstmts)
 {
-	INFO_FMT_PRINT("===========process read or write start:inst:[%s]============\n",
-		inst->ToString().c_str());
-	//get the potential statement
 	std::string file_name=inst->GetFileName();
 	int line=inst->GetLine();
-	InternalLock();
+
+	ScopedLock lock(internal_lock_);
 	PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
 	if(pstmt==NULL) {
 		WakeUpPostponeThread(curr_thd_id);
-		InternalUnlock();
-		return ;
+		return NULL;
 	}
-	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
-	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
-	//first pstmt set of the pstmt pairs
-	PStmtSet first_pstmts;
+	// Traverse the threads' tls to find the parter of current pstmt
 	for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
 		thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
 		if(iter->first==curr_thd_id)
 			continue;
 		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 			iter->second);
+		// Find the parter pstmt in the thread accessed pstmt set
 		for(PStmtMetasMap::iterator iiter=tls->pstmt_metas_map.begin();
 			iiter!=tls->pstmt_metas_map.end();iiter++) {
 			if(prace_db_->SecondPotentialStatement(iiter->first,pstmt)) {
@@ -324,23 +326,63 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			}
 		}
 	}
-	InternalUnlock();
+	return pstmt;
+}
+
+void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
+	address_t addr,size_t size,RaceEventType type)
+{
+	INFO_FMT_PRINT("===========process read or write start:inst:[%s]============\n",
+		inst->ToString().c_str());
+	//get the potential statement
+	// std::string file_name=inst->GetFileName();
+	// int line=inst->GetLine();
+	// InternalLock();
+	// PStmt *pstmt=prace_db_->GetPStmt(file_name,line);
+	// if(pstmt==NULL) {
+	// 	WakeUpPostponeThread(curr_thd_id);
+	// 	InternalUnlock();
+	// 	return ;
+	// }
+	// address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
+	// address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
+	// /* Traverse the threads' tls to find the parter of current pstmt */
+	// PStmtSet first_pstmts;
+	// for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
+	// 	thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
+	// 	if(iter->first==curr_thd_id)
+	// 		continue;
+	// 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
+	// 		iter->second);
+	// 	for(PStmtMetasMap::iterator iiter=tls->pstmt_metas_map.begin();
+	// 		iiter!=tls->pstmt_metas_map.end();iiter++) {
+	// 		if(prace_db_->SecondPotentialStatement(iiter->first,pstmt)) {
+	// 			first_pstmts.insert(iiter->first);
+	// 		}
+	// 	}
+	// }
+	// InternalUnlock();
+	PStmtSet first_pstmts;
+	PStmt *pstmt=GetFirstPStmtSet(curr_thd_id,inst,first_pstmts);
+	if(pstmt==NULL)
+		return ;
+	address_t start_addr=UNIT_DOWN_ALIGN(addr,unit_size_);
+	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
 	timestamp_t curr_thd_clk=tls->vc.GetClock(curr_thd_id);
-	//first accessed stmt of the potentail stmt pair,needed to be postponed
-	//and we do not need to wake up currently
+	// First accessed parter stmt of the pstmt pair
 	if(first_pstmts.empty()) {
 		bool redudant_flag=true;
 		MAP_KEY_NOTFOUND_NEW(tls->pstmt_metas_map,pstmt,MetaSet);
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
-			//only the verification thread accesses the meta,don't need sync.
+			// Only the verification thread accesses the meta,don't need sync.
 			Meta *meta=GetMeta(iaddr);
 			DEBUG_ASSERT(meta);
 			tls->pp_metas.insert(meta);
 			tls->pstmt_metas_map[pstmt]->insert(meta);
-			//we assume that same inst and the same epoch in current threads'
-			//recent snapshots means that the access is redudant 
+			/* We assume that same inst and the same epoch in current threads'
+			   recent snapshots means that the access is redudant. */ 
 			if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 				continue;
 			//add snapshot
@@ -348,13 +390,17 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			redudant_flag=false;
 		}
 		//redudant access
-		if(redudant_flag){
+		if(redudant_flag) {
 			tls->status=AVAILABLE;
 			WakeUpPostponeThread(curr_thd_id);
 		}
 		else {
 			INFO_FMT_PRINT("=========first pstmt postponed:[%s]=========\n",
 				inst->ToString().c_str());
+			/* Application threads may be concurrent executed with the verification
+			   thread. Consider the scenario that application thread has waked up
+			   in advance, and current verify request is being processed. So the
+			   pp_metas will be filled again and is not added into the hy_metas. */
 			ClearWhenVerifyRequestInvalid(tls);
 		}
 	} else {
@@ -380,12 +426,10 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 		if(!pp_thd_map.empty())
 			HandleRace(pp_thd_map,curr_thd_id);
 		else {
-			if(res==REDUDANT || res==NONE_SHARED) {
+			if(res==REDUDANT || res==NONE_SHARED)
 				WakeUpPostponeThread(curr_thd_id);
-			}
-			else {	
+			else
 				HandleNoRace(curr_thd_id);
-			}
 		}
 	}
 	INFO_FMT_PRINT("===========process read or write end============\n");
@@ -417,8 +461,8 @@ void ParallelVerifierMl::HandleRace(std::map<thread_t,bool> &pp_thd_map,
 	//wake up postpone thread set,postpone current thread
 	if(!RandomBool()) {
 		WakeUpPostponeThreadSet(pp_thds);
-		//the accessed pstmt of current thread has been verified fully
-		//wake up the current thread
+		/* The pstmt current thread accessed has been fully verified and 
+		   current thread should not be continuously postponed */
 		if(pp_thd_map.find(curr_thd_id)!=pp_thd_map.end()) {
 			WakeUpPostponeThread(curr_thd_id);
 			tls->status=AVAILABLE;
@@ -426,22 +470,31 @@ void ParallelVerifierMl::HandleRace(std::map<thread_t,bool> &pp_thd_map,
 		else //current thread should keep the postponed status
 			return ;
 	}
-	else {
+	/* Wake up the threads being postponed in pstmts which are fully verified
+	   and current thread */ 
+	else { 
 		WakeUpPostponeThreadSet(keep_up_thds);
 		WakeUpPostponeThread(curr_thd_id);
 		tls->status=AVAILABLE;
 	}
 }
 
+/** 
+  * This function is invoked when the pstmt pairs are read-shared,
+  * we do nothing and directly exit the process_read_or_write. If there
+  * no available threads, the work of choosing random thread will be
+  * finished in the application thread end. If there are other available
+  * threads, the whole application can still continuously run. 
+  */
 void ParallelVerifierMl::HandleNoRace(thread_t curr_thd_id)
 {
-	ScopedLock lock(internal_lock_);
-	if(avail_thd_set_.empty() && 
-		ChooseRandomThreadAfterAllUnavailable()==curr_thd_id) {
-		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
-			thd_uid_map_[curr_thd_id]);
-		tls->status=AVAILABLE;
-	}
+	// ScopedLock lock(internal_lock_);
+	// if(avail_thd_set_.empty() && 
+	// 	ChooseRandomThreadAfterAllUnavailable()==curr_thd_id) {
+	// 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
+	// 		thd_uid_map_[curr_thd_id]);
+	// 	tls->status=AVAILABLE;
+	// }
 }
 
 Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_addr,
@@ -451,8 +504,7 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 	PostponeThreadSet tmp_pp_thds;
 	bool flag=false;
 	VERIFY_RESULT res=NONE_SHARED;
-	//Current verify request is valid, which indicates that current thread is 
-	//still postponed, so the vc of the TLS is not updated by othe sync ops.
+
 	ThreadLocalStore *curr_tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
 	MAP_KEY_NOTFOUND_NEW(curr_tls->pstmt_metas_map,second_pstmt,MetaSet);
@@ -489,16 +541,15 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 						flag=true;
 						res=RACY;
 						tmp_pp_thds.insert(iter->first);
-						if(meta_ss->type==RACE_EVENT_WRITE) {
+						// write to write race
+						if(meta_ss->type==RACE_EVENT_WRITE)
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
-						}
-						else {
-							//set the relevant write inst
+						// read to write race
+						else
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
-						}
-						//add race to race db
+						// add race to race db
 						ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 							curr_thd_id,inst,type);
 						meta->AddRacedInstPair(meta_ss->inst,inst);
@@ -519,29 +570,32 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 							res=SHARED_READ;
 					}// else if(type==RACE_EVENT_READ)
 				}// if(tls->pp_metas.find(meta)!=tls->pp_metas.end())
+				/* The postponed thread is waked up asynchronized and it's postponed
+				   status is invalid. */
 				else
 					ClearWhenVerifyRequestInvalid(tls);
-				//meta accessed by the first_pstmt is historical
-				if(prl_vrf_num_>0) {
-					//send the historical detection request
-					DistributeHtyDtcRequest(meta,inst,curr_thd_id,type,
-						second_pstmt);
-				}
+				// send the historical detection request
+				if(prl_vrf_num_>0)
+					DistributeHtyDtcRequest(meta,inst,curr_thd_id,type,second_pstmt);
 			}// if(first_metas->find(meta)!=first_metas->end())
-			else {
+			/* Parter pstmt does not access the same shared memory location with the
+  			   current pstmt. */
+			else
 				res=NONE_SHARED;
-			}
-		}
-		//add current thread's snapshot
+		}// traverse all thread local store
+
+		// Add current thread's meta snapshot
 	 	AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,second_pstmt);
 		curr_tls->pp_metas.insert(meta);
-		//ClearWhenVerifyRequestInvalid(curr_tls);
-		//inser the meta into historical set in advance
+		/* Add the meta into hy_metas in advance. If current thread is still postponed,
+		   then the hy_metas will not be used. Only the postponed status is invalid,
+		   hy_metas will be used for processing historical detection. */
 		curr_tls->hy_metas.insert(meta);
 		curr_tls->pstmt_metas_map[second_pstmt]->insert(meta);
 	}
 
 	INFO_FMT_PRINT("======wait verification end========\n");
+	// Find the verification race
 	if(flag) {
 		InternalLock();
 		prace_db_->RemoveRelationMapping(first_pstmt,second_pstmt);
@@ -668,7 +722,10 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 	INFO_FMT_PRINT("==========history detection end=========\n");
 }
 
-//only used after the thread waked up
+/**
+  * This function is only invoked in the function 'postponethread'.
+  * Need the outer synchronization.
+  */
 void ParallelVerifierMl::ClearPostponedThreadMetas(thread_t curr_thd_id) 
 {
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
@@ -684,6 +741,7 @@ void ParallelVerifierMl::ClearPostponedThreadMetas(thread_t curr_thd_id)
 //
 void ParallelVerifierMl::ClearWhenVerifyRequestInvalid(ThreadLocalStore *tls)
 {
+	ScopedLock lock(internal_lock_);
 	if(tls->status==AFTER_POSTPONED && !tls->pp_metas.empty()) {
 		std::copy(tls->pp_metas.begin(),tls->pp_metas.end(),
 			inserter(tls->hy_metas,tls->hy_metas.end()));
