@@ -53,6 +53,8 @@ private:
 	DISALLOW_COPY_CONSTRUCTORS(Image);
 };
 
+#define INVALID_INST_ID static_cast<inst_id_type>(-1)
+
 //An instruction in an image
 class Inst {
 public:
