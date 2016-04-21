@@ -13,7 +13,7 @@ class TraceLog;
 
 class LogEntry {
 public:
-	~LogEntry() {}
+	~LogEntry();
 
 	LogEntryType type() { return proto_->type(); }
 

@@ -6,6 +6,12 @@ namespace tracer
 RecorderAnalyzer::RecorderAnalyzer():internal_lock_(NULL),trace_log_(NULL)
 {}
 
+RecorderAnalyzer::~RecorderAnalyzer()
+{
+	delete internal_lock_;
+	delete trace_log_;
+}
+
 void RecorderAnalyzer::Register() 
 {
 	knob_->RegisterBool("enable_recorder", "whether enable the recorder analyzer", "0");

@@ -35,6 +35,19 @@ private:
 	DISALLOW_COPY_CONSTRUCTORS(Semaphore);
 };
 
+// Define the null mutex (used in single threaded mode)
+class NullMutex : public Mutex {
+public:
+  	NullMutex() {}
+  	~NullMutex() {}
+
+  	void Lock() {}
+  	void Unlock() {}
+  	Mutex *Clone() { return new NullMutex; }
+private:
+  	DISALLOW_COPY_CONSTRUCTORS(NullMutex);
+};
+
 //Read-Write mutex interface
 class RWMutex {
 public:
