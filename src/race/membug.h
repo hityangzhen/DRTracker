@@ -20,16 +20,10 @@
 #include "race/race.h"
 #include "core/filter.h"
 #include "core/sync.h"
+#include "core/knob.h"
 
 namespace race
 {
-static uint64 FilenameAndLineHash(char *file_name,int line) {
-	uint64 key=0;
-	while(*file_name)
-		key += *file_name++;
-	key += line;
-	return key;
-}
 
 // The abstract data for the memory meta info.
 class MemMeta {
@@ -62,7 +56,7 @@ public:
 	//
 	bool Harmful(MemAccess *mem_acc1,MemAccess *mem_acc2);
 	// Load the information about the null pointer read
-	bool LoadStaticInfo(std::string &path);
+	bool LoadStaticInfo(const char *file_name);
 protected:
 	typedef std::tr1::unordered_set<uint64> NullPtrSet;
 	// Write the NULL to the pointer or read the pointer by dereference
@@ -122,7 +116,7 @@ public:
 	void CreateFreedRegionFilter(Mutex *lock);
 	void AddFreedRegion(address_t region_start,size_t region_size);
 	// Load the information about the `delete` operator.
-	bool LoadStaticInfo(std::string &file_name);
+	bool LoadStaticInfo(const char *file_name);
 protected:
 	typedef std::tr1::unordered_set<uint64> DeletePtrSet;
 	bool InFreedRegion(address_t addr);
@@ -145,7 +139,7 @@ public:
 	
 	bool Harmful(MemAccess *mem_acc1,MemAccess *mem_acc2);
 	// Load the information about the buffer index.
-	bool LoadStaticInfo(std::string &file_name);
+	bool LoadStaticInfo(const char *file_name);
 protected:
 	typedef std::tr1::unordered_set<uint64> BufferIndexSet;
 	bool BufferIndex(MemAccess *mem_acc);
@@ -173,11 +167,10 @@ public:
 	   that should go through later. */
 	thread_t ProcessHarmfulRace(MemMeta *tmp_mem_meta,MemAccess *tmp_mem_acc1,
 		MemAccess *tmp_mem_acc2);
-	/* Wrapper function of the `AddGlobalRegion` from the UnInitRead
-	   Only for null pointer dereference. */
+	// Wrapper function of the `AddGlobalRegion` from the UnInitRead
 	void AddGlobalRegion(address_t region_start,size_t region_size) {
-		if(null_ptr_deref_)
-			null_ptr_deref_->AddGlobalRegion(region_start,region_size);
+		if(uninit_read_)
+			uninit_read_->AddGlobalRegion(region_start,region_size);
 	}
 
 protected:

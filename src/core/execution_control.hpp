@@ -225,6 +225,7 @@ public:
 	//parallel verification
 	void ParallelVerificationThread();
 	void CreateVerificationThread(VOID *);
+	Mutex *CreateNullMutex() { return new NullMutex; }
 	static void __CreateVerificationThread(VOID *v) {
 		ctrl_->CreateVerificationThread(v);
 	}

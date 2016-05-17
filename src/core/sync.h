@@ -102,7 +102,6 @@ public:
 	int Post() { return sem_post(&sem_); }
 private:
 	sem_t sem_;
-
 	DISALLOW_COPY_CONSTRUCTORS(SysSemaphore);
 };
 

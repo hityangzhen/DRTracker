@@ -38,7 +38,7 @@ void MultiLockHb::AfterPthreadMutexLock(thread_t curr_thd_id,timestamp_t curr_th
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
+	ScopedLock lock(internal_lock_);
 	if(cond_wait_db_)
 		cond_wait_db_->AddLastestLock(curr_thd_id,addr);
 	LockSet *curr_lockset;
@@ -55,7 +55,7 @@ void MultiLockHb::BeforePthreadMutexUnlock(thread_t curr_thd_id,timestamp_t curr
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
+	ScopedLock lock(internal_lock_);
 	if(loop_db_) {
 		ProcessSRLSync(curr_thd_id,inst);
 		//increase the current thread's timestamp
@@ -78,7 +78,7 @@ void MultiLockHb::AfterPthreadRwlockRdlock(thread_t curr_thd_id,timestamp_t curr
 	Inst *inst,address_t addr)
 {
 	LockCountIncrease();
-	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
+	ScopedLock lock(internal_lock_);
 	LockSet *curr_reader_lockset;
 	if(curr_reader_lockset_table_.find(curr_thd_id)==curr_reader_lockset_table_.end()||
 		!curr_reader_lockset_table_[curr_thd_id])
@@ -99,7 +99,7 @@ void MultiLockHb::BeforePthreadRwlockUnlock(thread_t curr_thd_id,timestamp_t cur
 {
 	LockCountIncrease();
 	//readwrite lock is either in writer lockset or in reader lockset
-	ScopedLock lock(internal_lock_,!knob_->ValueInt("parallel_detector_number"));
+	ScopedLock lock(internal_lock_);
 
 	if(loop_db_)
 		ProcessSRLSync(curr_thd_id,inst);

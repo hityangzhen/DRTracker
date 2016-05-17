@@ -142,14 +142,16 @@ RaceType VerifierMl::HistoryRace(MetaSnapshot *meta_ss,thread_t thd_id,
 		}
 		if(mlmeta_ss->type==RACE_EVENT_READ &&
 			mlmeta_ss->wr_ls.Disjoint(curr_ls) && 
-			mlmeta_ss->rd_ls.Disjoint(curr_ls)) {
+			mlmeta_ss->rd_ls.Disjoint(curr_ls) &&
+			mlmeta_ss->wr_ls.Disjoint(curr_rdls)) {
 			return READTOWRITE;
 		}
 	}
 	else if(curr_type==RACE_EVENT_READ && mlmeta_ss->thd_clk>thd_clk) {
 		if(mlmeta_ss->type==RACE_EVENT_WRITE && 
 			mlmeta_ss->wr_ls.Disjoint(curr_ls) && 
-			mlmeta_ss->wr_ls.Disjoint(curr_rdls)) {
+			mlmeta_ss->wr_ls.Disjoint(curr_rdls) &&
+			mlmeta_ss->rd_ls.Disjoint(curr_ls)) {
 			return WRITETOREAD;
 		} 
 	}

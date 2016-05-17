@@ -10,17 +10,15 @@ namespace race
 //static initialize
 size_t Verifier::ss_deq_len=0;
 address_t Verifier::unit_size_=0;
-bool Verifier::history_race_analysis_=true;
-
+// bool Verifier::history_race_analysis_=true;
 Verifier::Verifier():internal_lock_(NULL),verify_lock_(NULL),prace_db_(NULL),
-	filter_(NULL) {}
+	filter_(NULL),flags_(0),mem_bug_(NULL) {}
 
 Verifier::~Verifier() 
 {
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
-
 	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
@@ -77,6 +75,8 @@ void Verifier::Register()
 	knob_->RegisterInt("ss_deq_len","max length of the snapshot vector","10");
 	knob_->RegisterBool("history_race_analysis","whether do the history race"
 		" analysis","0");
+	knob_->RegisterBool("harmful_race_analysis","whether do the harmful race"
+		" analysis","0");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
@@ -97,8 +97,15 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	ss_deq_len=knob_->ValueInt("ss_deq_len");
 	if(ss_deq_len<=0)
 		ss_deq_len=1;
-	if(!knob_->ValueBool("history_race_analysis"))
-		history_race_analysis_=false;
+	if(knob_->ValueBool("history_race_analysis"))
+		// history_race_analysis_=false;
+		SET_HISTORY_RACE_ANALYSIS(flags_);
+	if(knob_->ValueBool("harmful_race_analysis")) {
+		SET_HARMFUL_RACE_ANALYSIS(flags_);
+		mem_bug_=new MemBug(knob_);
+		mem_bug_->Register();
+		mem_bug_->Setup();
+	}
 }
 
 void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
@@ -228,14 +235,16 @@ void Verifier::BeforeFree(thread_t curr_thd_id, timestamp_t curr_thd_clk,
 void Verifier::BeforeMemRead(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr,size_t size)
 {
-	ChooseRandomThreadBeforeProcess(addr,curr_thd_id);
+	if(!ChooseRandomThreadBeforeProcess(addr,curr_thd_id))
+		return;
 	ProcessReadOrWrite(curr_thd_id,inst,addr,size,RACE_EVENT_READ);
 }
 
 void Verifier::BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 	Inst *inst,address_t addr,size_t size)
 {
-	ChooseRandomThreadBeforeProcess(addr,curr_thd_id);
+	if(!ChooseRandomThreadBeforeProcess(addr,curr_thd_id))
+		return ;
 	ProcessReadOrWrite(curr_thd_id,inst,addr,size,RACE_EVENT_WRITE);
 }
 
@@ -536,18 +545,18 @@ void Verifier::AfterSemWait(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 /**
  * multi-threaded region
  */
-void Verifier::ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id)
+bool Verifier::ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id)
 {
 	if(FilterAccess(addr))	
-		return ;
-	VerifyLock();
+		return false;
 	//generate random thread id
-	//if(!avail_thd_set_.empty()) {
-		while(RandomThread(avail_thd_set_)!=curr_thd_id) {
-			VerifyUnlock();
-			Sleep(1000);
-		}
-	//}
+	while(true) {
+		VerifyLock();
+		if(RandomThread(avail_thd_set_)==curr_thd_id)
+			return true;
+		VerifyUnlock();
+		Sleep(50);
+	}
 }
 
 /**
@@ -625,7 +634,7 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 			redudant_flag=false;
 		}
 		//accumulate postponed threads
-		std::map<thread_t,bool> pp_thd_map;
+		std::map<thread_t,uint8> pp_thd_map;
 		VERIFY_RESULT res=NONE_SHARED;
 		if(!redudant_flag) {
 			// PostponeThreadSet pp_thds;
@@ -639,7 +648,8 @@ void Verifier::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr
 		if(!pp_thd_map.empty()) {
 			HandleRace(pp_thd_map,curr_thd_id);
 		}else {
-			if(res==REDUDANT || res==NONE_SHARED)
+			//only choose one of the REDUDANT and NONE_SHARED 
+			if(res==NONE_SHARED)
 				KeepupThread(curr_thd_id);
 			else
 				HandleNoRace(curr_thd_id);
@@ -918,28 +928,42 @@ void Verifier::HandleNoRace(thread_t curr_thd_id)
 	PostponeThread(curr_thd_id);
 }
 //
-void Verifier::HandleRace(std::map<thread_t,bool> &pp_thd_map,
-	thread_t curr_thd_id)
+void Verifier::HandleRace(std::map<thread_t,uint8> &pp_thd_map,thread_t curr_thd_id)
 {
 // INFO_PRINT("=================handle race===================\n");
 	PostponeThreadSet pp_thds;
 	//keep up threads
 	PostponeThreadSet keep_up_thds;
+	//harmful threads
+	PostponeThreadSet hrm_thds;
 
-	for(std::map<thread_t,bool>::iterator iter=pp_thd_map.begin();
+	for(std::map<thread_t,uint8>::iterator iter=pp_thd_map.begin();
 		iter!=pp_thd_map.end();iter++) {
 		//pp_thd_map may exist current thread 
 		if(iter->first!=curr_thd_id) {
+			//harmful threads should go through later
+			if(HARMFUL_THREAD(iter->second)) {
+				hrm_thds.insert(iter->first);
+				continue;
+			}
 			pp_thds.insert(iter->first);
-			if(iter->second==false)
+			if(FULLY_VERIFIED(iter->second))
 				keep_up_thds.insert(iter->first);
 		}
 	}
+
+	//
+	if(HARMFUL_THREAD(pp_thd_map[curr_thd_id])) {
+		WakeUpPostponeThreadSet(pp_thds);
+		PostponeThread(curr_thd_id);
+		return ;
+	}
+	//postponed thread set at least contains a harmless thread
 	//wake up postpone thread set,postpone current thread
 	if(!RandomBool()) {
 		WakeUpPostponeThreadSet(pp_thds);
 		//the accessed pstmt of current thread has been verified fully 
-		if(pp_thd_map.find(curr_thd_id)!=pp_thd_map.end())
+		if(FULLY_VERIFIED(pp_thd_map[curr_thd_id]))
 			return KeepupThread(curr_thd_id);
 		else
 			PostponeThread(curr_thd_id);
@@ -1076,7 +1100,7 @@ void Verifier::ClearPStmtCorrespondingMetas(PStmt *pstmt,MetaSet *metas)
 Verifier::VERIFY_RESULT 
 Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 	address_t start_addr,address_t end_addr,PStmt *second_pstmt,Inst *inst,
-	thread_t curr_thd_id,RaceEventType type,std::map<thread_t,bool> &pp_thd_map)
+	thread_t curr_thd_id,RaceEventType type,std::map<thread_t,uint8> &pp_thd_map)
 {
 	// if(pstmt_metas_map_.find(first_pstmt)==pstmt_metas_map_.end() || 
 	// 	pstmt_metas_map_[first_pstmt]==NULL)
@@ -1093,10 +1117,10 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 		Meta *meta=GetMeta(iaddr);
-		// if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst)) {
-		// 	res=REDUDANT;
-		// 	continue;
-		// }
+		if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst)) {
+			res=REDUDANT;
+			continue;
+		}
 		//corresponding pstmt access the shared meta
 		if(first_metas->find(meta)!=first_metas->end()) {
 
@@ -1127,9 +1151,15 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 								meta_ss->inst,curr_thd_id,inst);
 						}
 						else {
-							//set the relevant write inst
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
+						}
+						//harmful data race
+						thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,
+							meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
+						if(hrm_thd_id!=0) {
+							SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
+							INFO_PRINT("============harmful race=============\n");
 						}
 						//add race to race db
 						ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
@@ -1143,6 +1173,13 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							tmp_pp_thds.insert(iter->first);
 							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
+							//harmful data race
+							thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,
+								meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
+							if(hrm_thd_id!=0) {
+								SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
+								INFO_PRINT("============harmful race=============\n");
+							}
 							//add race to race db
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
@@ -1156,7 +1193,7 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 			}// verify the postponed thread's metas
 
 			//if history race analysis is unavailable
-			if(!history_race_analysis_)
+			if(!HISTORY_RACE_ANALYSIS(flags_))
 				continue;
 
 			//postponed racing metas will be ignored if it has been verified racy
@@ -1182,6 +1219,11 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							race_type==WRITETOREAD) {
 							PrintDebugRaceInfo(meta,race_type,iter->first,meta_ss->inst,
 								curr_thd_id,inst);
+							//harmful race
+							if(ProcessHarmfulRace(meta,iter->first,meta_ss->inst,
+								meta_ss->type,curr_thd_id,inst,type))
+								INFO_PRINT("============harmful race=============\n");
+							
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
 							// flag=true;
@@ -1212,11 +1254,12 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
  		}
  		//add current thread's snapshot
  		AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,second_pstmt);
-		DEBUG_ASSERT(second_metas);
+ 		DEBUG_ASSERT(second_metas);
 		second_metas->insert(meta);
 		// thd_metas_map_[curr_thd_id]->insert(meta);
 		thd_ppmetas_map_[curr_thd_id]->insert(meta);
 	}
+	
 	//verify postponed raced meta
 	if(flag) {
 		prace_db_->RemoveRelationMapping(first_pstmt,second_pstmt);
@@ -1226,13 +1269,14 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 			//postponed threads of the first pstmt need not to be postponed
 			for(PostponeThreadSet::iterator iter=tmp_pp_thds.begin();
 				iter!=tmp_pp_thds.end();iter++) {
-				pp_thd_map[*iter]=false;
+				// pp_thd_map[*iter]=false;
+				SET_FULLY_VERIFIED(pp_thd_map[*iter]);
 			}
 		//first pstmt has not been fully verified
 		} else {
 			for(PostponeThreadSet::iterator iter=tmp_pp_thds.begin();
 				iter!=tmp_pp_thds.end();iter++) {
-				pp_thd_map[*iter]=true;
+				// pp_thd_map[*iter]=true;
 			}
 		}
 
@@ -1240,7 +1284,8 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 			delete pstmt_metas_map_[second_pstmt];
 			pstmt_metas_map_.erase(second_pstmt);
 			//second pstmt has been fully verified
-			pp_thd_map[curr_thd_id]=false;
+			// pp_thd_map[curr_thd_id]=false;
+			SET_FULLY_VERIFIED(pp_thd_map[curr_thd_id]);
 		}
 	}
 	return res;
@@ -1275,4 +1320,19 @@ void Verifier::PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,
 		i2->ToString().c_str());
 	DEBUG_FMT_PRINT_SAFE("%s%s\n",SEPARATOR,SEPARATOR);
 }
+
+//this function is only invoked at the basis of the determinted data race and
+//is applied during the wait verification.
+thread_t Verifier::ProcessHarmfulRace(Meta *meta,thread_t tid1,Inst *i1,RaceEventType t1,
+	thread_t tid2,Inst *i2,RaceEventType t2)
+{
+	if(HARMFUL_RACE_ANALYSIS(flags_)) {
+		MemMeta mem_meta=mem_bug_->CreateMemMeta(meta->addr);
+		MemAccess mem_acc1=mem_bug_->CreateMemAccess(tid1,i1,t1);
+		MemAccess mem_acc2=mem_bug_->CreateMemAccess(tid2,i2,t2);
+		return mem_bug_->ProcessHarmfulRace(&mem_meta,&mem_acc1,&mem_acc2);
+	}
+	return 0;
+}
+
 }// namespace race

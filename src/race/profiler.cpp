@@ -4,7 +4,6 @@
 
 namespace race{
 // volatile size_t Profiler::exit_num=0;
-// address_t Profiler::unit_size=0;
 void Profiler::HandlePreSetup()
 {
 	ExecutionControl::HandlePreSetup();
@@ -262,12 +261,14 @@ void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 {
 	// //create a new detector for each detection thread
 	// Detector *dtc=new MultiLockHb;
+	// if(!dtc->ParallelDetection())
+	// 	dtc->SetParallelDetectorNumber(GetParallelDetectorNumber());
 	// LockKernel();
 	// dtc->Register();
 	// //here we not firstly register the enable_djit in the HandlePreStepup,
 	// //so do not need to use the Enabled(); otherwise, can update the originl
 	// //value to 0
-	// dtc->Setup(CreateMutex(),race_db_);
+	// dtc->Setup(CreateNullMutex(),race_db_);
 	// UnlockKernel();
 	// if(unit_size_==0)
 	// 	unit_size_=dtc->GetUnitSize();

@@ -4,6 +4,14 @@
 
 namespace race
 {
+static uint64 FilenameAndLineHash(const char *file_name,int line) 
+{
+	uint64 key=0;
+	while(*file_name)
+		key += *file_name++;
+	key += line;
+	return key;
+}
 
 NullPtrDeref::NullPtrDeref()
 {}
@@ -30,7 +38,7 @@ bool NullPtrDeref::Harmful(MemAccess *mem_acc1,MemAccess *mem_acc2)
 }
 
 // Load the information about the null pointer read
-bool NullPtrDeref::LoadStaticInfo(std::string &file_name)
+bool NullPtrDeref::LoadStaticInfo(const char *file_name)
 {
 	std::fstream in(file_name,std::ios::in);
 	if(!in)
@@ -102,6 +110,7 @@ bool UnInitRead::Harmful(MemMeta *meta,MemAccess *mem_acc1,MemAccess *mem_acc2)
 		SetInitWrite(meta,mem_acc2->thd_id);
 		return true;		
 	}
+	return false;
 }
 
 void UnInitRead::SetInitWrite(MemMeta *meta,thread_t thd_id)
@@ -165,7 +174,7 @@ inline thread_t DanglingPtr::Harmful(MemAccess *mem_acc1,MemAccess *mem_acc2)
 	return 0;
 }
 
-bool DanglingPtr::LoadStaticInfo(std::string &file_name)
+bool DanglingPtr::LoadStaticInfo(const char *file_name)
 {
 	std::fstream in(file_name,std::ios::in);
 	if(!in)
@@ -177,10 +186,10 @@ bool DanglingPtr::LoadStaticInfo(std::string &file_name)
 	char buffer[50];
 	while(in.eof()) {
 		in.getline(buffer,50,'\n');
-		fn=strtok(delimit,buffer);
+		fn=strtok(buffer,delimit);
 		if(fn==NULL)
 			continue;
-		ln=strtok(delimit,NULL);
+		ln=strtok(NULL,delimit);
 		del_ptr_set_.insert(FilenameAndLineHash(fn,atoi(ln)));
 	}
 	in.close();
@@ -195,7 +204,7 @@ BufferOverflow::~BufferOverflow()
 
 inline bool BufferOverflow::BufferIndex(MemAccess *mem_acc)
 {
-	string file_name=mem_acc->inst->GetFileName();
+	std::string file_name=mem_acc->inst->GetFileName();
 	int line=mem_acc->inst->GetLine();
 	return buf_idx_set_.find(FilenameAndLineHash(file_name.c_str(),line))!=
 		buf_idx_set_.end();
@@ -203,11 +212,11 @@ inline bool BufferOverflow::BufferIndex(MemAccess *mem_acc)
 
 bool BufferOverflow::Harmful(MemAccess *mem_acc1,MemAccess *mem_acc2)
 {
-	return mem_acc1==RACE_EVENT_READ ? BufferIndex(mem_acc1):
+	return mem_acc1->type==RACE_EVENT_READ ? BufferIndex(mem_acc1):
 		BufferIndex(mem_acc2);
 }
 
-bool BufferOverflow::LoadStaticInfo(std::string &file_name)
+bool BufferOverflow::LoadStaticInfo(const char *file_name)
 {
 	std::fstream in(file_name,std::ios::in);
 	if(!in)
@@ -219,10 +228,10 @@ bool BufferOverflow::LoadStaticInfo(std::string &file_name)
 	char buffer[50];
 	while(in.eof()) {
 		in.getline(buffer,50,'\n');
-		fn=strtok(delimit,buffer);
+		fn=strtok(buffer,delimit);
 		if(fn==NULL)
 			continue;
-		ln=strtok(delimit,NULL);
+		ln=strtok(NULL,delimit);
 		buf_idx_set_.insert(FilenameAndLineHash(fn,atoi(ln)));
 	}
 	in.close();
@@ -267,7 +276,7 @@ inline void MemBug::InitializeNullPtrDeref()
 {
 	null_ptr_deref_=new NullPtrDeref;
 	std::string file_name=knob_->ValueStr("null_ptr_deref");
-	if(!null_ptr_deref_->LoadStaticInfo(file_name)) {
+	if(!null_ptr_deref_->LoadStaticInfo(file_name.c_str())) {
 		delete null_ptr_deref_;
 		null_ptr_deref_=NULL;
 	}
@@ -283,7 +292,7 @@ inline void MemBug::InitializeDanglingPtr()
 {
 	dangling_ptr_=new DanglingPtr;
 	std::string file_name=knob_->ValueStr("dangling_ptr");
-	if(!dangling_ptr_->LoadStaticInfo(file_name)) {
+	if(!dangling_ptr_->LoadStaticInfo(file_name.c_str())) {
 		delete dangling_ptr_;
 		dangling_ptr_=NULL;
 	}
@@ -293,7 +302,7 @@ inline void MemBug::InitializeBufferOverflow()
 {
 	buffer_overflow_=new BufferOverflow;
 	std::string file_name=knob_->ValueStr("buffer_overflow");
-	if(!buffer_overflow_->LoadStaticInfo(file_name)) {
+	if(!buffer_overflow_->LoadStaticInfo(file_name.c_str())) {
 		delete buffer_overflow_;
 		buffer_overflow_=NULL;
 	}
@@ -305,17 +314,19 @@ thread_t MemBug::ProcessHarmfulRace(MemMeta *tmp_mem_meta,MemAccess *tmp_mem_acc
 	/* Null pointer dereference, uninitialized read and buffer overflow are both 
 	   composed a read and a write access. 
 	   Dangling pointer may be composed of two write accesses. */
-	if(tmp_mem_acc1->type==RACE_EVENT_WRITE && tmp_mem_acc2->type==RACE_EVENT_READ ||
-		tmp_mem_acc1->type==RACE_EVENT_READ && tmp_mem_acc2->type==RACE_EVENT_WRITE) {
+	if((tmp_mem_acc1->type==RACE_EVENT_WRITE && tmp_mem_acc2->type==RACE_EVENT_READ) ||
+		(tmp_mem_acc1->type==RACE_EVENT_READ && tmp_mem_acc2->type==RACE_EVENT_WRITE)) {
 		// Null pointer dereference do not need meta
 		if(null_ptr_deref_ && null_ptr_deref_->Harmful(tmp_mem_acc1,tmp_mem_acc2)) {
-			return t1==RACE_EVENT_WRITE ? tid2:tid1;
+			return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
+				tmp_mem_acc2->thd_id:tmp_mem_acc1->thd_id;
 		}
 		// Always make the read access go through laster.
 		if(uninit_read_) {
 			MemMeta *mem_meta=new MemMeta(tmp_mem_meta->addr);
 			if(uninit_read_->Harmful(mem_meta,tmp_mem_acc1,tmp_mem_acc2))
-				return t1==RACE_EVENT_WRITE ? tid2:tid1;
+				return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
+					tmp_mem_acc2->thd_id:tmp_mem_acc1->thd_id;
 		}
 		// Always make the `delete` operator go through later. 
 		if(dangling_ptr_) {
@@ -323,7 +334,8 @@ thread_t MemBug::ProcessHarmfulRace(MemMeta *tmp_mem_meta,MemAccess *tmp_mem_acc
 		}
 		// Always make the write changing the index go through later.
 		if(buffer_overflow_ && buffer_overflow_->Harmful(tmp_mem_acc1,tmp_mem_acc2)) {
-			return t1==RACE_EVENT_WRITE ? tid1:tid2;
+			return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
+				tmp_mem_acc1->thd_id:tmp_mem_acc2->thd_id;
 		}
 	} else if(tmp_mem_acc1->type==RACE_EVENT_WRITE && 
 		tmp_mem_acc2->type==RACE_EVENT_WRITE) {

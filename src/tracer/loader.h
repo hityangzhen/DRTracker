@@ -1,6 +1,10 @@
 /**
 	* @file tracer/loader.h
-	* Define the tracer loader.
+	* Define the tracer loader. Load the trace long and replay the behavior
+	* of the program. At the same time, loader distributes the events to the
+	* list of analyzers. 
+	* Anyone needs to extend the analysis should inherit the Analyzer and 
+	* adds the new analyzer into the list of the analyzers.
 	*/
 
 #ifndef __TRACER_LOADER_H

@@ -11,7 +11,7 @@
 #include "race/race.h"
 #include "core/pin_sync.hpp"
 #include "core/vector_clock.h"
-
+#include "race/membug.h"
 //default dynamic data race detection engine is FastTrack
 
 namespace race 
@@ -25,6 +25,24 @@ namespace race
 	if((map).find(key)==(map).end() || (map)[key]==NULL) \
 		(map)[key]=new value_type
 	
+#define HISTORY_RACE_ANALYSIS_MASK 1
+#define HARMFUL_RACE_ANALYSIS_MASK 2
+
+#define SET_HISTORY_RACE_ANALYSIS(flags) flags |= HISTORY_RACE_ANALYSIS_MASK
+#define SET_HARMFUL_RACE_ANALYSIS(flags) flags |= HARMFUL_RACE_ANALYSIS_MASK
+
+#define HISTORY_RACE_ANALYSIS(flags) (flags & HISTORY_RACE_ANALYSIS_MASK)
+#define HARMFUL_RACE_ANALYSIS(flags) (flags & HARMFUL_RACE_ANALYSIS_MASK)
+
+#define HARMFUL_THREAD_MASK 1
+#define FULLY_VERIFIED_MASK 2
+
+#define SET_HARMFUL_THREAD(flags) flags |= HARMFUL_THREAD_MASK
+#define SET_FULLY_VERIFIED(flags) flags |= FULLY_VERIFIED_MASK
+
+#define HARMFUL_THREAD(flags) (flags & HARMFUL_THREAD_MASK)
+#define FULLY_VERIFIED(flags) (flags & FULLY_VERIFIED_MASK)
+
 class Verifier:public Analyzer {
 protected:
 	//limit the snapshot vector length
@@ -354,7 +372,7 @@ protected:
   	void ProcessFree(BarrierMeta *barrier_meta);
 
   	CondMeta *GetCondMeta(address_t addr);
-  	void ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta);
+  	virtual void ProcessSignal(thread_t curr_thd_id,CondMeta *cond_meta);
   	void ProcessFree(CondMeta *cond_meta);
 
   	SemMeta *GetSemMeta(address_t addr);
@@ -390,13 +408,13 @@ protected:
 		race_db_->CreateRace(meta->addr,t0,i0,p0,t1,i1,p1,false);
 	}
 	
-	void ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id);
+	bool ChooseRandomThreadBeforeProcess(address_t addr,thread_t curr_thd_id);
 	thread_t ChooseRandomThreadAfterAllUnavailable();
 	void ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,address_t addr,
 		size_t size,RaceEventType type);
 	VERIFY_RESULT WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 		address_t start_addr,address_t end_addr,PStmt *second_pstmt,Inst *inst,
-		thread_t curr_thd_id,RaceEventType type,std::map<thread_t,bool> &pp_thd_map);
+		thread_t curr_thd_id,RaceEventType type,std::map<thread_t,uint8> &pp_thd_map);
 	//wrapper function
 	virtual void AddMetaSnapshot(Meta *meta,thread_t curr_thd_id,
 		timestamp_t curr_thd_clk,RaceEventType type,Inst *inst,PStmt *s) {
@@ -420,7 +438,7 @@ protected:
 	void WakeUpPostponeThread(thread_t thd_id);
 	void PostponeThread(thread_t curr_thd_id);
 	void KeepupThread(thread_t curr_thd_id);
-	void HandleRace(std::map<thread_t,bool> &pp_thd_map,thread_t curr_thd_id);
+	void HandleRace(std::map<thread_t,uint8> &pp_thd_map,thread_t curr_thd_id);
 	void HandleNoRace(thread_t curr_thd_id);
 
 	void ClearPostponedThreadMetas(thread_t curr_thd_id);
@@ -436,13 +454,17 @@ protected:
 		avail_thd_set_.insert(curr_thd_id);
 	}
 
+	//harmful data race analysis
+	thread_t ProcessHarmfulRace(Meta *meta,thread_t tid1,Inst *i1,RaceEventType t1,
+		thread_t tid2,Inst *i2,RaceEventType t2);
+
 	Mutex *internal_lock_;
 	Mutex *verify_lock_;
 	RaceDB *race_db_;
 	PRaceDB *prace_db_;
 	RegionFilter *filter_;
 	static address_t unit_size_;
-	static bool history_race_analysis_;
+	bool history_race_analysis_;
 	//random thread id
 	thread_t rdm_thd_id_;
 
@@ -469,6 +491,9 @@ protected:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
+	
+	uint8 flags_;
+	MemBug *mem_bug_;
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };

@@ -52,12 +52,13 @@ public:
 	//synchronization object is shared between VerifyRequest and HtyDtcRequest
 	class SyncObject {
 	public:
-		SyncObject():ref(0) {}
+		SyncObject():ref(0),vrf_fini(false) {}
 		~SyncObject() {}
 		VectorClock vc;
 		LockSet rd_ls;
 		LockSet wr_ls;
-		int ref;
+		uint16 ref;
+		bool vrf_fini;
 	};
 	class VerifyRequest {
 	public:
@@ -111,8 +112,10 @@ public:
 		return req;
 	}
 	void PopVerifyRequest() {
-		if(!vrf_req_que_.empty())
+		if(!vrf_req_que_.empty()) {
+			vrf_req_que_.front()->sync_obj->vrf_fini=true;
 			vrf_req_que_.pop();
+		}
 	}
 	bool VerifyRequestQueueEmpty() { return vrf_req_que_.empty(); }
 	void ClearVerifyRequest(VerifyRequest *req) {
@@ -133,7 +136,7 @@ public:
 		return req;
 	}
 	void ClearHtyDtcRequest(HtyDtcRequest *req) {
-		if(--req->sync_obj->ref==0)
+		if(req->sync_obj->vrf_fini && --req->sync_obj->ref==0)
 			delete req->sync_obj;
 		delete req;
 	}

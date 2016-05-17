@@ -2,7 +2,6 @@
 #include "core/log.h"
 namespace race
 {
-
 ParallelVerifierMl::ParallelVerifierMl():prl_vrf_num_(0)
 {}
 
@@ -332,8 +331,8 @@ PStmt *ParallelVerifierMl::GetFirstPStmtSet(thread_t curr_thd_id,Inst *inst,
 void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 	address_t addr,size_t size,RaceEventType type)
 {
-	INFO_FMT_PRINT("===========process read or write start:inst:[%s]============\n",
-		inst->ToString().c_str());
+	// INFO_FMT_PRINT("===========process read or write start:inst:[%s]============\n",
+	// 	inst->ToString().c_str());
 	//get the potential statement
 	// std::string file_name=inst->GetFileName();
 	// int line=inst->GetLine();
@@ -362,6 +361,7 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 	// 	}
 	// }
 	// InternalUnlock();
+
 	PStmtSet first_pstmts;
 	PStmt *pstmt=GetFirstPStmtSet(curr_thd_id,inst,first_pstmts);
 	if(pstmt==NULL)
@@ -370,7 +370,9 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 	address_t end_addr=UNIT_UP_ALIGN(addr+size,unit_size_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	timestamp_t curr_thd_clk=tls->vc.GetClock(curr_thd_id);
+	// timestamp_t curr_thd_clk=tls->vc.GetClock(curr_thd_id);
+	SyncObject *sync_obj=GetVerifyRequest()->sync_obj;
+	timestamp_t curr_thd_clk=sync_obj->vc.GetClock(curr_thd_id);
 	// First accessed parter stmt of the pstmt pair
 	if(first_pstmts.empty()) {
 		bool redudant_flag=true;
@@ -395,8 +397,8 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			WakeUpPostponeThread(curr_thd_id);
 		}
 		else {
-			INFO_FMT_PRINT("=========first pstmt postponed:[%s]=========\n",
-				inst->ToString().c_str());
+			// INFO_FMT_PRINT("=========first pstmt postponed:[%s]=========\n",
+			// 	inst->ToString().c_str());
 			/* Application threads may be concurrent executed with the verification
 			   thread. Consider the scenario that application thread has waked up
 			   in advance, and current verify request is being processed. So the
@@ -404,6 +406,7 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			ClearWhenVerifyRequestInvalid(tls);
 		}
 	} else {
+
 		bool redudant_flag=true;
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			Meta *meta=GetMeta(iaddr);
@@ -426,13 +429,15 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 		if(!pp_thd_map.empty())
 			HandleRace(pp_thd_map,curr_thd_id);
 		else {
-			if(res==REDUDANT || res==NONE_SHARED)
+			if(res==NONE_SHARED) {
+				tls->status=AVAILABLE;
 				WakeUpPostponeThread(curr_thd_id);
+			}
 			else
 				HandleNoRace(curr_thd_id);
 		}
 	}
-	INFO_FMT_PRINT("===========process read or write end============\n");
+	// INFO_FMT_PRINT("===========process read or write end============\n");
 }
 
 void ParallelVerifierMl::WakeUpPostponeThread(thread_t thd_id)
@@ -508,10 +513,12 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 	ThreadLocalStore *curr_tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
 	MAP_KEY_NOTFOUND_NEW(curr_tls->pstmt_metas_map,second_pstmt,MetaSet);
-	timestamp_t curr_thd_clk=curr_tls->vc.GetClock(curr_thd_id);
-
-	INFO_FMT_PRINT("===========wait verification start,addr:[%lx],thd_id:[%lx],first_pstmt:[%d]"
-			"============\n",start_addr,curr_thd_id,first_pstmt->line_);
+	// timestamp_t curr_thd_clk=curr_tls->vc.GetClock(curr_thd_id);
+	SyncObject *sync_obj=GetVerifyRequest()->sync_obj;
+	DEBUG_ASSERT(sync_obj);
+	timestamp_t curr_thd_clk=sync_obj->vc.GetClock(curr_thd_id);
+	// INFO_FMT_PRINT("===========wait verification start,addr:[%lx],thd_id:[%lx],first_pstmt:[%d]"
+	// 		"============\n",start_addr,curr_thd_id,first_pstmt->line_);
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 		Meta *meta=GetMeta(iaddr);
 		//traverse all thread local store
@@ -594,7 +601,7 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 		curr_tls->pstmt_metas_map[second_pstmt]->insert(meta);
 	}
 
-	INFO_FMT_PRINT("======wait verification end========\n");
+	// INFO_FMT_PRINT("======wait verification end========\n");
 	// Find the verification race
 	if(flag) {
 		InternalLock();
@@ -674,8 +681,8 @@ RaceType ParallelVerifierMl::HistoryRace(MetaSnapshot *meta_ss,timestamp_t thd_c
 void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 	Inst *inst,thread_t curr_thd_id,RaceEventType type,SyncObject *sync_obj)
 {
-	INFO_FMT_PRINT("==========history detection start:[%s]=========\n",
-		inst->ToString().c_str());
+	// INFO_FMT_PRINT("==========history detection start:[%s]=========\n",
+	// 	inst->ToString().c_str());
 	VectorClock &vc=sync_obj->vc;
 	LockSet &rd_ls=sync_obj->rd_ls;
 	LockSet &wr_ls=sync_obj->wr_ls;
@@ -684,8 +691,8 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 		thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
 		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 			iter->second);
-		INFO_FMT_PRINT("==========history  other thread:[%lx],clk:[%ld]=========\n",
-				iter->first,vc.GetClock(iter->first));
+		// INFO_FMT_PRINT("==========history  other thread:[%lx],clk:[%ld]=========\n",
+		// 		iter->first,vc.GetClock(iter->first));
 		//different thread and current meta in the thread historical accessed meta set
 		if(iter->first==curr_thd_id || tls->hy_metas.find(meta)==tls->hy_metas.end())
 			continue ;
@@ -719,7 +726,7 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 			}
 		}// traverse thread historical snapshot
 	}
-	INFO_FMT_PRINT("==========history detection end=========\n");
+	// INFO_FMT_PRINT("==========history detection end=========\n");
 }
 
 /**
@@ -734,8 +741,8 @@ void ParallelVerifierMl::ClearPostponedThreadMetas(thread_t curr_thd_id)
 	if(!tls->pp_metas.empty())
 		std::copy(tls->pp_metas.begin(),tls->pp_metas.end(),
 			inserter(tls->hy_metas,tls->hy_metas.end()));
-	INFO_FMT_PRINT("==========clear postponed thread:[%lx] hy_metas size:[%ld]========\n",
-		curr_thd_id,tls->hy_metas.size());
+	// INFO_FMT_PRINT("==========clear postponed thread:[%lx] hy_metas size:[%ld]========\n",
+	// 	curr_thd_id,tls->hy_metas.size());
 }
 
 //

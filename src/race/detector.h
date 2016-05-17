@@ -216,6 +216,8 @@ public:
   }
 
   static std::map<std::string,EventHandle> event_handle_table;
+  static void SetParallelDetectorNumber(int num) { prl_dtc_num=num; }
+  static bool ParallelDetection() { return prl_dtc_num>0; }
 protected:
   typedef std::map<int,Loop> LoopTable;
   typedef std::tr1::unordered_map<std::string,LoopTable *> LoopMap;
@@ -351,6 +353,8 @@ protected:
   LoopDB *loop_db_;
   //cond_wait info
   CondWaitDB *cond_wait_db_;
+  //parallel detector number
+  static int prl_dtc_num;
 };
 
 
