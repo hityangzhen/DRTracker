@@ -386,9 +386,9 @@ void MultiLockHb::ProcessWrite(thread_t curr_thd_id,Meta *meta,Inst *inst)
 		for(MlMeta::EpochLockSetPairVector::iterator elsp_it=writer_elsp_vec->begin();
 			elsp_it!=writer_elsp_vec->end();elsp_it++) {
 
-			INFO_FMT_PRINT("current lockset:%s\n",
-				curr_lockset_table_[curr_thd_id]->ToString().c_str());
-			INFO_FMT_PRINT("writer_elsp:%s\n",(*elsp_it)->second.ToString().c_str());
+			// INFO_FMT_PRINT("current lockset:%s\n",
+			// 	curr_lockset_table_[curr_thd_id]->ToString().c_str());
+			// INFO_FMT_PRINT("writer_elsp:%s\n",(*elsp_it)->second.ToString().c_str());
 
 			if((*elsp_it)->first>thd_clk && 
 				(*elsp_it)->second.Disjoint(curr_lockset_table_[curr_thd_id])) {

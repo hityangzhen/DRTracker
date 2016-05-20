@@ -125,19 +125,23 @@ void Detector::Setup(Mutex *lock,RaceDB *race_db)
 	}
 	//spinning read loop
 	if(knob_->ValueStr("exiting_cond_lines").compare("0")!=0) {
+		INFO_PRINT("=======exiting_cond_lines start=======\n");
 		loop_db_=new LoopDB(race_db_);
 		if(!loop_db_->LoadSpinReads(knob_->ValueStr("exiting_cond_lines").c_str())) {
 			delete loop_db_;
 			loop_db_=NULL;
 		}
+		INFO_PRINT("=======exiting_cond_lines end=======\n");
 	}
 	//cond_wait
 	if(knob_->ValueStr("cond_wait_lines").compare("0")!=0) {
+		INFO_PRINT("=======cond_wait_lines start=======\n");
 		cond_wait_db_=new CondWaitDB;
 		if(!cond_wait_db_->LoadCondWait(knob_->ValueStr("cond_wait_lines").c_str())) {
 			delete cond_wait_db_;
 			cond_wait_db_=NULL;
 		}
+		INFO_PRINT("=======cond_wait_lines end=======\n");
 	}
 	//parallelize the detection 
 	if(prl_dtc_num>0) {

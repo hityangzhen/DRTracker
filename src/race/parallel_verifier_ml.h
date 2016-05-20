@@ -52,13 +52,13 @@ public:
 	//synchronization object is shared between VerifyRequest and HtyDtcRequest
 	class SyncObject {
 	public:
-		SyncObject():ref(0),vrf_fini(false) {}
+		SyncObject():cnt(0),ref(0) {}
 		~SyncObject() {}
 		VectorClock vc;
 		LockSet rd_ls;
 		LockSet wr_ls;
-		uint16 ref;
-		bool vrf_fini;
+		uint8 cnt;
+		uint8 ref;
 	};
 	class VerifyRequest {
 	public:
@@ -90,6 +90,9 @@ public:
 	public:
 		HtyDtcRequest(Meta *m,PStmt *p,Inst *i,thread_t t,RaceEventType rt,
 		SyncObject *obj):meta(m),pstmt(p),inst(i),thd_id(t),type(rt),sync_obj(obj) {}
+		// Invalid historical detection request will be used for referenced sync obj
+		HtyDtcRequest(SyncObject *obj):meta(NULL),pstmt(NULL),inst(NULL),sync_obj(obj)
+			{}
 		~HtyDtcRequest() {}
 		Meta *meta;
 		PStmt *pstmt;
@@ -105,18 +108,8 @@ public:
 	void SetTlsKey(TLS_KEY tls) { tls_key_=tls; }
 	void SetParallelVerifierNumber(int num) { prl_vrf_num_=num; }
 	void PushVerifyRequest(VerifyRequest *req,ThreadLocalStore *tls);
-	VerifyRequest* GetVerifyRequest() {
-		if(vrf_req_que_.empty())
-			return NULL;
-		VerifyRequest *req=vrf_req_que_.front();
-		return req;
-	}
-	void PopVerifyRequest() {
-		if(!vrf_req_que_.empty()) {
-			vrf_req_que_.front()->sync_obj->vrf_fini=true;
-			vrf_req_que_.pop();
-		}
-	}
+	VerifyRequest* GetVerifyRequest();
+	void PopVerifyRequest();
 	bool VerifyRequestQueueEmpty() { return vrf_req_que_.empty(); }
 	void ClearVerifyRequest(VerifyRequest *req) {
 		delete req;
@@ -135,10 +128,18 @@ public:
 		req_deq->pop();
 		return req;
 	}
+	void ProcessInvalidHtyDtcRequest(HtyDtcRequest *req) {
+		++(req->sync_obj->ref);
+	}
+	bool InvalidHtyDtcRequest(HtyDtcRequest *req) {
+		return req && req->meta==NULL;
+	}
 	void ClearHtyDtcRequest(HtyDtcRequest *req) {
-		if(req->sync_obj->vrf_fini && --req->sync_obj->ref==0)
-			delete req->sync_obj;
-		delete req;
+		if(req) {
+			if(req->meta==NULL && req->sync_obj->cnt==req->sync_obj->ref)
+				delete req->sync_obj;
+			delete req;
+		}
 	}
 	//wrapper
 	void HistoryDetection(HtyDtcRequest *req) {
@@ -174,8 +175,9 @@ protected:
 		LockSet &wr_ls,RaceEventType curr_type);
 	void DistributeHtyDtcRequest(Meta *meta,Inst *inst,thread_t curr_thd_id,RaceEventType type,
 		PStmt *pstmt);
-	void HistoryDetection(Meta *meta,PStmt *curr_pstmt,Inst *inst,
-		thread_t curr_thd_id,RaceEventType type,SyncObject *sync_obj);
+	void DistributeEndOfSyncObj();
+	void HistoryDetection(Meta *meta,PStmt *curr_pstmt,Inst *inst,thread_t curr_thd_id,
+		RaceEventType type,SyncObject *sync_obj);
 private:
 	TLS_KEY tls_key_;
 	int prl_vrf_num_;

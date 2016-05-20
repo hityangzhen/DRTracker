@@ -229,6 +229,7 @@ void Profiler::HandleProgramExit()
 	// delete acculock_analyzer_;
 	// delete simple_lock_analyzer_;
 	// delete simplelock_plus_analyzer_;
+
 	//==============================end============================
 
 	//======================data race verifier=====================
@@ -335,8 +336,17 @@ void Profiler::StartHistoryDetection(thread_t thd_id)
 	while(true) {
 		ParallelVerifierMl::HtyDtcRequest *req=prl_vrf_ml_analyzer_->
 			PopHtyDtcRequest(thd_id);
-		if(req==NULL)
+		if(req==NULL) {
+			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
 			goto fini;
+		}
+		if(prl_vrf_ml_analyzer_->InvalidHtyDtcRequest(req)) {
+			LockKernel();
+			prl_vrf_ml_analyzer_->ProcessInvalidHtyDtcRequest(req);
+			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
+			UnlockKernel();
+			goto fini;
+		}
 		else {
 			prl_vrf_ml_analyzer_->HistoryDetection(req);
 			//after processing the request

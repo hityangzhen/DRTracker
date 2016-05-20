@@ -41,7 +41,9 @@ void ParallelVerifierMl::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id
 {
 	SysSemaphore *sys_sema=new SysSemaphore(0);
 	ThreadLocalStore *tls=new ThreadLocalStore;
+	SetThreadData(tls_key_,tls,GetThreadId());
 	tls->vc.Increment(curr_thd_id);
+	ScopedLock lock(internal_lock_);
 	//not the main thread
 	if(parent_thd_id!=INVALID_THD_ID) {
 		VectorClock *parent_vc=&((ThreadLocalStore *)GetThreadData(tls_key_,
@@ -51,8 +53,6 @@ void ParallelVerifierMl::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id
 		parent_vc->Increment(parent_thd_id);
 	}
 	tls->status=AVAILABLE;
-	SetThreadData(tls_key_,tls,GetThreadId());
-	ScopedLock lock(internal_lock_);
 	thd_uid_map_[curr_thd_id]=GetThreadId();
 	//thread semaphore
 	if(thd_smp_map_.find(curr_thd_id)==thd_smp_map_.end()) {
@@ -86,6 +86,7 @@ void ParallelVerifierMl::AfterPthreadCreate(thread_t curr_thd_id,
 void ParallelVerifierMl::AfterPthreadJoin(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk, Inst *inst,thread_t child_thd_id)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *curr_tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
 	VectorClock *curr_vc=&curr_tls->vc;
@@ -94,8 +95,6 @@ void ParallelVerifierMl::AfterPthreadJoin(thread_t curr_thd_id,
 	VectorClock *child_vc=&child_tls->vc;
 	curr_vc->Join(child_vc);
 	curr_vc->Increment(curr_thd_id);
-
-	ScopedLock lock(internal_lock_);
 	UnblockThread(curr_thd_id);
 }
 
@@ -128,9 +127,9 @@ void ParallelVerifierMl::BeforeMemWrite(thread_t curr_thd_id,
 void ParallelVerifierMl::BeforePthreadBarrierWait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
 	BlockThread(curr_thd_id);
 	//set the vector clock
@@ -147,9 +146,9 @@ void ParallelVerifierMl::BeforePthreadBarrierWait(thread_t curr_thd_id,
 void ParallelVerifierMl::AfterPthreadBarrierWait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	BarrierMeta *barrier_meta=GetBarrierMeta(addr);
 	UnblockThread(curr_thd_id);
 	tls->vc.Join(&barrier_meta->vc);
@@ -162,9 +161,9 @@ void ParallelVerifierMl::BeforePthreadCondWait(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
 	address_t mutex_addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	//handle unlock
 	MutexMeta *mutex_meta=GetMutexMeta(mutex_addr);
 	ProcessPreMutexUnlock(curr_thd_id,mutex_meta);
@@ -185,9 +184,9 @@ void ParallelVerifierMl::AfterPthreadCondWait(thread_t curr_thd_id,
     timestamp_t curr_thd_clk, Inst *inst,address_t cond_addr,
     address_t mutex_addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	CondMeta *cond_meta=GetCondMeta(cond_addr);
 	//clear from the wait table
 	CondMeta::ThreadVectorClockMap::iterator witer=
@@ -213,9 +212,9 @@ void ParallelVerifierMl::AfterPthreadCondWait(thread_t curr_thd_id,
 void ParallelVerifierMl::BeforeSemPost(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	SemMeta *sem_meta=GetSemMeta(addr);
 
 	sem_meta->vc.Join(&tls->vc);
@@ -228,9 +227,9 @@ void ParallelVerifierMl::BeforeSemPost(thread_t curr_thd_id,
 void ParallelVerifierMl::AfterSemWait(thread_t curr_thd_id,
 	timestamp_t curr_thd_clk,Inst *inst,address_t addr)
 {
+	ScopedLock lock(internal_lock_);
 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	ScopedLock lock(internal_lock_);
 	SemMeta *sem_meta=GetSemMeta(addr);
 	UnblockThread(curr_thd_id);
 	tls->vc.Join(&sem_meta->vc);
@@ -405,8 +404,8 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			   pp_metas will be filled again and is not added into the hy_metas. */
 			ClearWhenVerifyRequestInvalid(tls);
 		}
-	} else {
-
+	} 
+	else {
 		bool redudant_flag=true;
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			Meta *meta=GetMeta(iaddr);
@@ -419,17 +418,20 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 		std::map<thread_t,bool> pp_thd_map;
 		VERIFY_RESULT res=NONE_SHARED;
 		if(!redudant_flag) {
+			// Count the sent historical request
 			for(PStmtSet::iterator iter=first_pstmts.begin();iter!=
 				first_pstmts.end();iter++) {
 				PStmt *first_pstmt=*iter;
 				res=WaitVerification(start_addr,end_addr,first_pstmt,pstmt,inst,
 					curr_thd_id,type,pp_thd_map);
 			}
+			// End the use of sync obj.
+			DistributeEndOfSyncObj();
 		}
 		if(!pp_thd_map.empty())
 			HandleRace(pp_thd_map,curr_thd_id);
 		else {
-			if(res==NONE_SHARED) {
+			if(res==REDUDANT || res==NONE_SHARED) {
 				tls->status=AVAILABLE;
 				WakeUpPostponeThread(curr_thd_id);
 			}
@@ -521,6 +523,10 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 	// 		"============\n",start_addr,curr_thd_id,first_pstmt->line_);
 	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 		Meta *meta=GetMeta(iaddr);
+		if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst)) {
+			res=REDUDANT;
+			continue;
+		}
 		//traverse all thread local store
 		for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
 			thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
@@ -541,9 +547,12 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 					MetaSnapshot *meta_ss=meta->LastestMetaSnapshot(iter->first);
 					DEBUG_ASSERT(meta_ss);
 					//filter irrelevant postponed thread or raced inst pair
-					if(meta_ss->pstmt!=first_pstmt || 
-						meta->RacedInstPair(meta_ss->inst,inst))
+					if(meta_ss->pstmt!=first_pstmt)
+						continue; 
+					if(meta->RacedInstPair(meta_ss->inst,inst)) {
+						res=REDUDANT;
 						continue ;
+					}
 					if(type==RACE_EVENT_WRITE) {
 						flag=true;
 						res=RACY;
@@ -581,16 +590,21 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 				   status is invalid. */
 				else
 					ClearWhenVerifyRequestInvalid(tls);
-				// send the historical detection request
-				if(prl_vrf_num_>0)
+				// Send the historical detection request
+				if(prl_vrf_num_>0) {
 					DistributeHtyDtcRequest(meta,inst,curr_thd_id,type,second_pstmt);
+				}
 			}// if(first_metas->find(meta)!=first_metas->end())
 			/* Parter pstmt does not access the same shared memory location with the
   			   current pstmt. */
 			else
 				res=NONE_SHARED;
 		}// traverse all thread local store
+	}
 
+	InternalLock();
+	for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+		Meta *meta=GetMeta(iaddr);
 		// Add current thread's meta snapshot
 	 	AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,second_pstmt);
 		curr_tls->pp_metas.insert(meta);
@@ -604,7 +618,6 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 	// INFO_FMT_PRINT("======wait verification end========\n");
 	// Find the verification race
 	if(flag) {
-		InternalLock();
 		prace_db_->RemoveRelationMapping(first_pstmt,second_pstmt);
 		//first pstmt has been fully verified
 		if(prace_db_->HasFullyVerified(first_pstmt)) {
@@ -625,9 +638,46 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 			ClearFullyVerifierPStmtMetas(second_pstmt);
 			pp_thd_map[curr_thd_id]=false;
 		}
-		InternalUnlock();
+		
 	}
+	InternalUnlock();
 	return res;
+}
+
+ParallelVerifierMl::VerifyRequest* ParallelVerifierMl::GetVerifyRequest() 
+{
+	ScopedLock lock(internal_lock_);
+	if(vrf_req_que_.empty())
+		return NULL;
+	VerifyRequest *req=vrf_req_que_.front();
+	return req;
+}
+
+void ParallelVerifierMl::PopVerifyRequest() 
+{
+	ScopedLock lock(internal_lock_);
+	if(!vrf_req_que_.empty())
+		vrf_req_que_.pop();
+}
+
+void ParallelVerifierMl::DistributeEndOfSyncObj()
+{
+	SyncObject *sync_obj=GetVerifyRequest()->sync_obj;
+	// Parallel history detection threads
+	if(prl_vrf_num_>0) {
+		// Update the request count
+		sync_obj->cnt=htydtc_reqque_table_.size();
+		// Sent the request of the end of sync obj
+		for(HtyDtcReqQueueTable::iterator iter=htydtc_reqque_table_.begin();
+			iter!=htydtc_reqque_table_.end();iter++) {
+			HtyDtcRequestQueue *req_que=iter->second;
+			req_que->push(new HtyDtcRequest(sync_obj));
+		}
+	}
+	// Only contains a verification thread 
+	else if(prl_vrf_num_<0) {
+		delete sync_obj;
+	}
 }
 
 void ParallelVerifierMl::DistributeHtyDtcRequest(Meta *meta,Inst *inst,
@@ -640,8 +690,6 @@ void ParallelVerifierMl::DistributeHtyDtcRequest(Meta *meta,Inst *inst,
 	HtyDtcReqQueueTable::iterator iter=htydtc_reqque_table_.begin();
 	std::advance(iter,index);
 	req_que=iter->second;
-	//increase the reference of the sync obj
-	++sync_obj->ref;
 	//create and enque the historical detection request
 	req_que->push(new HtyDtcRequest(meta,pstmt,inst,curr_thd_id,type,sync_obj));
 	// INFO_FMT_PRINT("===========push history detection request:[%s]==============\n",
@@ -681,16 +729,16 @@ RaceType ParallelVerifierMl::HistoryRace(MetaSnapshot *meta_ss,timestamp_t thd_c
 void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 	Inst *inst,thread_t curr_thd_id,RaceEventType type,SyncObject *sync_obj)
 {
-	// INFO_FMT_PRINT("==========history detection start:[%s]=========\n",
-	// 	inst->ToString().c_str());
 	VectorClock &vc=sync_obj->vc;
 	LockSet &rd_ls=sync_obj->rd_ls;
 	LockSet &wr_ls=sync_obj->wr_ls;
 	//traverse all thread local store
 	for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
 		thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
+		
 		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 			iter->second);
+		
 		// INFO_FMT_PRINT("==========history  other thread:[%lx],clk:[%ld]=========\n",
 		// 		iter->first,vc.GetClock(iter->first));
 		//different thread and current meta in the thread historical accessed meta set
@@ -698,6 +746,7 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 			continue ;
 		if(meta->meta_ss_map.find(iter->first)==meta->meta_ss_map.end())
 			continue;
+		InternalLock();
 		MetaSnapshotDeque *meta_ss_deq=meta->meta_ss_map[iter->first];
 		for(MetaSnapshotDeque::iterator iiter=meta_ss_deq->begin();
 			iiter!=meta_ss_deq->end();iiter++) {
@@ -715,18 +764,17 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 				ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 					curr_thd_id,inst,type);
 				meta->AddRacedInstPair(meta_ss->inst,inst);
-				InternalLock();
+				
 				//remove the raced pstmt pair mapping
 				prace_db_->RemoveRelationMapping(meta_ss->pstmt,curr_pstmt);
 				if(prace_db_->HasFullyVerified(meta_ss->pstmt))
 					ClearFullyVerifierPStmtMetas(meta_ss->pstmt);
 				if(prace_db_->HasFullyVerified(curr_pstmt))
 					ClearFullyVerifierPStmtMetas(curr_pstmt);
-				InternalUnlock();
 			}
 		}// traverse thread historical snapshot
+		InternalUnlock();
 	}
-	// INFO_FMT_PRINT("==========history detection end=========\n");
 }
 
 /**
