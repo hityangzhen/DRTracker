@@ -43,6 +43,41 @@ namespace race
 #define HARMFUL_THREAD(flags) (flags & HARMFUL_THREAD_MASK)
 #define FULLY_VERIFIED(flags) (flags & FULLY_VERIFIED_MASK)
 
+#define MAX_STACK_NUM 4
+class CallStack {
+public:
+	CallStack():bgn_idx_(0),end_idx_(0) {
+		vec_.assign(MAX_STACK_NUM+1,NULL);
+	}
+	~CallStack() {}
+	void Push(std::string *funcname) {
+		vec_[end_idx_]=funcname;
+		end_idx_=(end_idx_+1)%(MAX_STACK_NUM+1);
+	}
+	std::string *PopFront() {
+		std::string *fn=vec_[bgn_idx_];
+		vec_[bgn_idx_]=NULL;
+		bgn_idx_=(bgn_idx_+1)%(MAX_STACK_NUM+1);
+		return fn;
+	}
+	std::string *PopBack() {
+		end_idx_=(end_idx_-1+MAX_STACK_NUM+1)%(MAX_STACK_NUM+1);
+		std::string *fn=vec_[end_idx_];
+		vec_[end_idx_]=NULL;
+		return fn;
+	}
+	bool Empty() { return bgn_idx_==end_idx_; }
+	bool Full() { 
+		return bgn_idx_<end_idx_?(end_idx_-bgn_idx_==MAX_STACK_NUM):
+			(end_idx_-bgn_idx_+1==0);
+	}
+	void PrintCallStack();
+private:
+	int bgn_idx_;
+	int end_idx_;
+	std::vector<std::string *> vec_;
+};
+
 class Verifier:public Analyzer {
 protected:
 	//limit the snapshot vector length
@@ -120,7 +155,7 @@ protected:
 				return false;
 			//munally set the previous step is 3;
 			MetaSnapshotDeque *meta_ss_deq=meta_ss_map[thd_id];
-			size_t step=meta_ss_deq->size()<3?meta_ss_deq->size():3;
+			size_t step=meta_ss_deq->size()<5?meta_ss_deq->size():5;
 
 			for(MetaSnapshotDeque::reverse_iterator iter=meta_ss_deq->rbegin();
 				iter!=meta_ss_deq->rbegin()+step;++iter) {
@@ -223,9 +258,10 @@ public:
 	typedef std::map<thread_t,SysSemaphore *> ThreadSemaphoreMap;
 	typedef std::set<thread_t> BlockThreadSet;
 	typedef std::set<thread_t> AvailableThreadSet;
-	typedef std::map<PStmt *,MetaSet *> PStmtMetasMap;
+	typedef std::tr1::unordered_map<PStmt *,MetaSet *> PStmtMetasMap;
 	typedef std::set<PStmt *> PStmtSet;
 	typedef std::tr1::unordered_map<thread_t,VectorClock *> ThreadVectorClockMap;
+	typedef std::tr1::unordered_map<thread_t,CallStack*> ThreadCallStackTable;
 
 	Verifier();
 	virtual ~Verifier();
@@ -257,6 +293,12 @@ public:
 		Inst *inst,address_t addr,size_t size);
 	virtual void BeforeMemWrite(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 		Inst *inst,address_t addr,size_t size);
+
+	//call-return
+	virtual void BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    	Inst *inst,std::string *funcname,address_t target);
+	virtual void BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+		Inst *inst,std::string *funcname,address_t target);
 
 	//malloc-free
 	virtual void AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
@@ -491,9 +533,11 @@ protected:
 	ThreadSemaphoreMap thd_smp_map_;
 	//thread corresponding vector clock
 	ThreadVectorClockMap thd_vc_map_;
-	
+	//thread call stack table
+	ThreadCallStackTable thd_callstack_table_;
 	uint8 flags_;
 	MemBug *mem_bug_;
+
 private:
 	DISALLOW_COPY_CONSTRUCTORS(Verifier);
 };

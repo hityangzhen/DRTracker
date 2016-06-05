@@ -401,7 +401,7 @@ void Detector::AfterPthreadCreate(thread_t currThdId,timestamp_t currThdClk,
 { }
 
 void Detector::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-    Inst *inst,address_t target)
+    Inst *inst,std::string *funcname,address_t target)
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_) {
@@ -425,7 +425,7 @@ void Detector::AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 
 }
 void Detector::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-    Inst *inst,address_t target)
+    Inst *inst,std::string *funcname,address_t target)
 {
 	ScopedLock lock(internal_lock_);
 	if(loop_db_) {

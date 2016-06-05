@@ -53,11 +53,11 @@ public:
 		address_t addr) {}
 
 	virtual void BeforeCall(thread_t currThdId,timestamp_t currThdClk,
-		Inst *inst,address_t target) {}
+		Inst *inst,std::string *funcname,address_t target) {}
 	virtual void AfterCall(thread_t currThdId,timestamp_t currThdClk,
 		Inst *inst,address_t target,address_t ret) {}
 	virtual void BeforeReturn(thread_t currThdId,timestamp_t currThdClk,
-		Inst *inst,address_t target) {}
+		Inst *inst,std::string *funcname,address_t target) {}
 	virtual void AfterReturn(thread_t currThdId,timestamp_t currThdClk,
 		Inst *inst,address_t target) {}
 

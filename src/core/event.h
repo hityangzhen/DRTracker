@@ -85,6 +85,7 @@ public:
 	virtual std::string func()=0;
 	virtual int argc()=0;
 	virtual int ref()=0;
+	virtual void set_ref(int ref)=0;
 	virtual void increase_ref()=0;
 	virtual int decrease_ref()=0;
 protected:
@@ -210,10 +211,11 @@ private:
 		ARG_ACCESSORS(NUM_ARGS);										\
 		MEMBER_ARGS(NUM_ARGS);											\
 		GET_INSTANCE(NUM_ARGS);											\
-		int ref_;														\
+		volatile int ref_;												\
 		int ref() {return ref_;}										\
 		void increase_ref() {++ref_;}									\
 		int decrease_ref() {return --ref_;}								\
+		void set_ref(int ref) {ref_=ref;}								\
 	private:															\
 		DISALLOW_COPY_CONSTRUCTORS(Event);								\
 	}
@@ -268,10 +270,10 @@ EVENT(BeforeAtomicInst,"BeforeAtomicInst",void (thread_t,timestamp_t,Inst *,
 	std::string,address_t));
 EVENT(AfterAtomicInst,"AfterAtomicInst",void (thread_t,timestamp_t,Inst *,
 	std::string,address_t));
-EVENT(BeforeCall,"BeforeCall",void (thread_t,timestamp_t,Inst *,address_t));
+EVENT(BeforeCall,"BeforeCall",void (thread_t,timestamp_t,Inst *,std::string *funcname,address_t));
 EVENT(AfterCall,"AfterCall",void (thread_t,timestamp_t,Inst *,address_t,
 	address_t));
-EVENT(BeforeReturn,"BeforeReturn",void (thread_t,timestamp_t,Inst *,address_t));
+EVENT(BeforeReturn,"BeforeReturn",void (thread_t,timestamp_t,Inst *,std::string *funcname,address_t));
 EVENT(AfterReturn,"AfterReturn",void (thread_t,timestamp_t,Inst *,address_t));
 EVENT(BeforePthreadCreate,"BeforePthreadCreate",void (thread_t,timestamp_t,
 	Inst *));

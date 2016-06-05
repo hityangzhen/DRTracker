@@ -108,7 +108,7 @@ public:
 	}
 
 	void BeforeCall(thread_t currThdId,timestamp_t currThdClk,
-		Inst *inst,address_t target) {
+		Inst *inst,std::string *funcname,address_t target) {
 		INFO_FMT_PRINT_SAFE(
         	"[T%lx] Before Call, inst='%s', target=0x%lx\n",
         	currThdId, inst->ToString().c_str(), target);
@@ -122,7 +122,7 @@ public:
 	}
 
 	void BeforeReturn(thread_t currThdId,timestamp_t currThdClk,
-		Inst *inst,address_t target) {
+		Inst *inst,std::string *funcname,address_t target) {
 		INFO_FMT_PRINT_SAFE(
         	"[T%lx] Before Return, inst='%s', target=0x%lx\n",
         	currThdId, inst->ToString().c_str(), target);

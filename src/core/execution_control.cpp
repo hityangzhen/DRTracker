@@ -117,6 +117,11 @@ void ExecutionControl::PostSetup()
 
 	HandlePostSetup();
 	if(GetParallelDetectorNumber()>0) {
+		desc_.SetHookBeforeMem();
+		desc_.SetHookPthreadFunc();
+		desc_.SetHookMallocFunc();
+		desc_.SetHookAtomicInst();
+		desc_.SetHookCallReturn();
 		ParallelDetectionThread();
 	}
 
@@ -231,7 +236,6 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 		//Instrumentation to track mem access
 		if(desc_.HookMem()) {
 			for(INS ins=BBL_InsHead(bbl);INS_Valid(ins);ins=INS_Next(ins)) {
-
 				if(FilterNonPotentialInstrument(filename,line,ins))
 					continue;
 //INFO_PRINT("==================potential instrument===================\n");
@@ -244,7 +248,6 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 
 					Inst *inst=GetInst(INS_Address(ins));
 					UpdateInstOpcode(inst,ins);
-
 					//Instrument before mem accesses.
 					if(desc_.HookBeforeMem()) {
 						if(INS_IsMemoryRead(ins)) {
@@ -346,18 +349,22 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 			}// for(INS ins=BBL_InsHead(bbl);INS_Valid(ins);ins=INS_Next(ins)) {
 		}// if(desc_.HookMem()) {
 
+		RTN rtn=TRACE_Rtn(trace);
+		if(rtn_funcname_map_.find(rtn)==rtn_funcname_map_.end())
+			rtn_funcname_map_[rtn]=RTN_Name(rtn);
+
 		//Instrumentation to track calls and returns.
 		if(desc_.HookCallReturn()) {
 			for(INS ins=BBL_InsHead(bbl);INS_Valid(ins);ins=INS_Next(ins)) {
 				if(INS_IsCall(ins)) {
 					Inst *inst=GetInst(INS_Address(ins));
 					UpdateInstOpcode(inst,ins);
-
 					INS_InsertCall(ins,IPOINT_BEFORE,
 						(AFUNPTR)__BeforeCall,
 						CALL_ORDER_BEFORE
 						IARG_THREAD_ID,
 						IARG_PTR,inst,
+						IARG_PTR,&rtn_funcname_map_[rtn],
 						//Target address of this branch instruction
 						IARG_BRANCH_TARGET_ADDR, 
 						IARG_END);
@@ -383,6 +390,7 @@ void ExecutionControl::InstrumentTrace(TRACE trace,VOID *v)
 						CALL_ORDER_BEFORE
 						IARG_THREAD_ID,
 						IARG_PTR,inst,
+						IARG_PTR,&rtn_funcname_map_[rtn],
 						IARG_BRANCH_TARGET_ADDR,
 						IARG_END);
 
@@ -444,6 +452,7 @@ void ExecutionControl::ContextChange(THREADID tid,CONTEXT_CHANGE_REASON reason,
 //there is no need to synchronize
 EventBase *ExecutionControl::GetEventBase(thread_t thd_id)
 {
+	ScopedLock lock(thd_deqlk_table_[thd_id]);
 	DEBUG_ASSERT(thd_deq_table_.find(thd_id)!=thd_deq_table_.end());
 	EventDeque *q=thd_deq_table_[thd_id];
 	if(q->empty())
@@ -455,6 +464,7 @@ EventBase *ExecutionControl::GetEventBase(thread_t thd_id)
 
 bool ExecutionControl::DetectionDequeEmpty(thread_t thd_id)
 {
+	ScopedLock lock(thd_deqlk_table_[thd_id]);
 	DEBUG_ASSERT(thd_deq_table_.find(thd_id)!=thd_deq_table_.end());
 	return thd_deq_table_[thd_id]->empty();
 }
@@ -813,8 +823,9 @@ void ExecutionControl::HandleBeforeMemRead(THREADID tid,Inst *inst,
 	timestamp_t curr_thd_clk=GetThdClk(tid);
 	CALL_ANALYSIS_FUNC2(BeforeMem,BeforeMemRead,self,curr_thd_clk,inst,
 		addr,size);
-	if(GetParallelDetectorNumber()>0)
+	if(GetParallelDetectorNumber()>0) {
 		DISTRIBUTE_MEMORY_EVENT(BeforeMemRead,self,curr_thd_clk,inst,addr,size);
+	}
 }
 
 void ExecutionControl::HandleAfterMemRead(THREADID tid, Inst *inst,
@@ -879,14 +890,14 @@ void ExecutionControl::HandleAfterAtomicInst(THREADID tid, Inst *inst,
 
 
 void ExecutionControl::HandleBeforeCall(THREADID tid, Inst *inst,
-                                        address_t target) 
+	std::string *funcname,address_t target) 
 {
   	thread_t self = Self();
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, BeforeCall, self, curr_thd_clk,
-                      inst, target);
+                      inst, funcname, target);
   	if(GetParallelDetectorNumber()>0)
-  		DISTRIBUTE_NONMEM_EVENT(BeforeCall,self,curr_thd_clk,inst,target);
+  		DISTRIBUTE_NONMEM_EVENT(BeforeCall,self,curr_thd_clk,inst,funcname,target);
 }
 
 void ExecutionControl::HandleAfterCall(THREADID tid, Inst *inst,
@@ -901,14 +912,14 @@ void ExecutionControl::HandleAfterCall(THREADID tid, Inst *inst,
 }
 
 void ExecutionControl::HandleBeforeReturn(THREADID tid, Inst *inst,
-                                          address_t target) 
+	std::string *funcname,address_t target) 
 {
   	thread_t self = Self();
   	timestamp_t curr_thd_clk = GetThdClk(tid);
   	CALL_ANALYSIS_FUNC2(CallReturn, BeforeReturn, self, curr_thd_clk,
-                      inst, target);
+                      inst, funcname, target);
   	if(GetParallelDetectorNumber()>0)
-  		DISTRIBUTE_NONMEM_EVENT(BeforeReturn,self,curr_thd_clk,inst,target);
+  		DISTRIBUTE_NONMEM_EVENT(BeforeReturn,self,curr_thd_clk,inst,funcname,target);
 }
 
 void ExecutionControl::HandleAfterReturn(THREADID tid, Inst *inst,
@@ -1209,9 +1220,9 @@ void ExecutionControl::__AfterAtomicInst(THREADID tid, Inst *inst,
 
 
 void ExecutionControl::__BeforeCall(THREADID tid, Inst *inst,
-	ADDRINT target) 
+	std::string *funcname,ADDRINT target) 
 {
-  ctrl_->HandleBeforeCall(tid, inst, target);
+  ctrl_->HandleBeforeCall(tid, inst, funcname, target);
 }
 
 void ExecutionControl::__AfterCall(THREADID tid, Inst *inst,
@@ -1221,9 +1232,9 @@ void ExecutionControl::__AfterCall(THREADID tid, Inst *inst,
 }
 
 void ExecutionControl::__BeforeReturn(THREADID tid, Inst *inst,
-	ADDRINT target) 
+	std::string *funcname,ADDRINT target) 
 {
-  ctrl_->HandleBeforeReturn(tid, inst, target);
+  ctrl_->HandleBeforeReturn(tid, inst, funcname, target);
 }
 
 void ExecutionControl::__AfterReturn(THREADID tid, Inst *inst,

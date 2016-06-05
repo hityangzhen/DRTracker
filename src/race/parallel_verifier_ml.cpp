@@ -310,20 +310,22 @@ PStmt *ParallelVerifierMl::GetFirstPStmtSet(thread_t curr_thd_id,Inst *inst,
 		return NULL;
 	}
 	// Traverse the threads' tls to find the parter of current pstmt
-	for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
-		thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
-		if(iter->first==curr_thd_id)
-			continue;
-		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
-			iter->second);
-		// Find the parter pstmt in the thread accessed pstmt set
-		for(PStmtMetasMap::iterator iiter=tls->pstmt_metas_map.begin();
-			iiter!=tls->pstmt_metas_map.end();iiter++) {
-			if(prace_db_->SecondPotentialStatement(iiter->first,pstmt)) {
-				first_pstmts.insert(iiter->first);
-			}
-		}
-	}
+	// for(std::tr1::unordered_map<thread_t,uint32>::iterator iter=
+	// 	thd_uid_map_.begin();iter!=thd_uid_map_.end();iter++) {
+	// 	if(iter->first==curr_thd_id)
+	// 		continue;
+	// 	ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
+	// 		iter->second);
+	// 	// Find the parter pstmt in the thread accessed pstmt set
+	// 	for(PStmtMetasMap::iterator iiter=tls->pstmt_metas_map.begin();
+	// 		iiter!=tls->pstmt_metas_map.end();iiter++) {
+	// 		if(prace_db_->SecondPotentialStatement(iiter->first,pstmt)) {
+	// 			first_pstmts.insert(iiter->first);
+	// 		}
+	// 	}
+	// }
+
+	prace_db_->SecondPotentialStatementSet(pstmt,first_pstmts);
 	return pstmt;
 }
 
@@ -375,19 +377,19 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 	// First accessed parter stmt of the pstmt pair
 	if(first_pstmts.empty()) {
 		bool redudant_flag=true;
-		MAP_KEY_NOTFOUND_NEW(tls->pstmt_metas_map,pstmt,MetaSet);
+		// MAP_KEY_NOTFOUND_NEW(tls->pstmt_metas_map,pstmt,MetaSet);
 		for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
 			// Only the verification thread accesses the meta,don't need sync.
 			Meta *meta=GetMeta(iaddr);
 			DEBUG_ASSERT(meta);
-			tls->pp_metas.insert(meta);
-			tls->pstmt_metas_map[pstmt]->insert(meta);
+			// tls->pp_metas.insert(meta);
+			// tls->pstmt_metas_map[pstmt]->insert(meta);
 			/* We assume that same inst and the same epoch in current threads'
 			   recent snapshots means that the access is redudant. */ 
 			if(meta->RecentMetaSnapshot(curr_thd_id,curr_thd_clk,inst))
 				continue;
 			//add snapshot
-			AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
+			// AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
 			redudant_flag=false;
 		}
 		//redudant access
@@ -402,6 +404,15 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 			   thread. Consider the scenario that application thread has waked up
 			   in advance, and current verify request is being processed. So the
 			   pp_metas will be filled again and is not added into the hy_metas. */
+			MAP_KEY_NOTFOUND_NEW(tls->pstmt_metas_map,pstmt,MetaSet);
+			pstmt->visited=true;
+			for(address_t iaddr=start_addr;iaddr<end_addr;iaddr+=unit_size_) {
+				Meta *meta=GetMeta(iaddr);
+				tls->pp_metas.insert(meta);
+				tls->pstmt_metas_map[pstmt]->insert(meta);
+				//add snapshot
+				AddMetaSnapshot(meta,curr_thd_id,curr_thd_clk,type,inst,pstmt);
+			}
 			ClearWhenVerifyRequestInvalid(tls);
 		}
 	} 
@@ -418,6 +429,8 @@ void ParallelVerifierMl::ProcessReadOrWrite(thread_t curr_thd_id,Inst *inst,
 		std::map<thread_t,bool> pp_thd_map;
 		VERIFY_RESULT res=NONE_SHARED;
 		if(!redudant_flag) {
+			MAP_KEY_NOTFOUND_NEW(tls->pstmt_metas_map,pstmt,MetaSet);
+			pstmt->visited=true;
 			// Count the sent historical request
 			for(PStmtSet::iterator iter=first_pstmts.begin();iter!=
 				first_pstmts.end();iter++) {
@@ -511,10 +524,9 @@ Verifier::VERIFY_RESULT ParallelVerifierMl::WaitVerification(address_t start_add
 	PostponeThreadSet tmp_pp_thds;
 	bool flag=false;
 	VERIFY_RESULT res=NONE_SHARED;
-
 	ThreadLocalStore *curr_tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 		thd_uid_map_[curr_thd_id]);
-	MAP_KEY_NOTFOUND_NEW(curr_tls->pstmt_metas_map,second_pstmt,MetaSet);
+	// MAP_KEY_NOTFOUND_NEW(curr_tls->pstmt_metas_map,second_pstmt,MetaSet);
 	// timestamp_t curr_thd_clk=curr_tls->vc.GetClock(curr_thd_id);
 	SyncObject *sync_obj=GetVerifyRequest()->sync_obj;
 	DEBUG_ASSERT(sync_obj);
@@ -738,9 +750,6 @@ void ParallelVerifierMl::HistoryDetection(Meta *meta,PStmt *curr_pstmt,
 		
 		ThreadLocalStore *tls=(ThreadLocalStore *)GetThreadData(tls_key_,
 			iter->second);
-		
-		// INFO_FMT_PRINT("==========history  other thread:[%lx],clk:[%ld]=========\n",
-		// 		iter->first,vc.GetClock(iter->first));
 		//different thread and current meta in the thread historical accessed meta set
 		if(iter->first==curr_thd_id || tls->hy_metas.find(meta)==tls->hy_metas.end())
 			continue ;

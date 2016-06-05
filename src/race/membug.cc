@@ -83,7 +83,7 @@ inline void UnInitRead::CreateGlobalRegionFilter(Mutex *lock)
 	filter_=new RegionFilter(lock);
 }
 
-inline void UnInitRead::AddGlobalRegion(address_t region_start,size_t region_size)
+void UnInitRead::AddGlobalRegion(address_t region_start,size_t region_size)
 {
 	DEBUG_ASSERT(region_size);
 	filter_->AddRegion(region_start,region_size,false);
@@ -91,7 +91,7 @@ inline void UnInitRead::AddGlobalRegion(address_t region_start,size_t region_siz
 
 inline bool UnInitRead::InGlobalRegion(address_t addr)
 {
-	return filter_->Filter(addr,false);
+	return !filter_->Filter(addr,false);
 }
 
 bool UnInitRead::Harmful(MemMeta *meta,MemAccess *mem_acc1,MemAccess *mem_acc2)
@@ -184,7 +184,7 @@ bool DanglingPtr::LoadStaticInfo(const char *file_name)
 	const char *delimit=" ",*fn,*ln;
 	fn=ln=NULL;
 	char buffer[50];
-	while(in.eof()) {
+	while(!in.eof()) {
 		in.getline(buffer,50,'\n');
 		fn=strtok(buffer,delimit);
 		if(fn==NULL)
@@ -226,7 +226,7 @@ bool BufferOverflow::LoadStaticInfo(const char *file_name)
 	const char *delimit=" ",*fn,*ln;
 	fn=ln=NULL;
 	char buffer[50];
-	while(in.eof()) {
+	while(!in.eof()) {
 		in.getline(buffer,50,'\n');
 		fn=strtok(buffer,delimit);
 		if(fn==NULL)

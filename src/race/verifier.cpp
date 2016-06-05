@@ -7,6 +7,23 @@
 #include <algorithm>
 namespace race
 {
+
+void CallStack::PrintCallStack() 
+{
+	INFO_FMT_PRINT("==============bgn_idx:[%d],end_idx[%d]=============\n",bgn_idx_,end_idx_);
+	if(bgn_idx_!=end_idx_) {
+		if(bgn_idx_<end_idx_)
+			for(int i=bgn_idx_;i<end_idx_;i++)
+				INFO_FMT_PRINT("[CALLSTACK] %s\n",vec_[i]->c_str());
+		else {
+			for(unsigned int i=bgn_idx_;i<vec_.size();i++)
+				INFO_FMT_PRINT("[CALLSTACK] %s\n",vec_[i]->c_str());
+			for(int i=0;i<end_idx_;i++)
+				INFO_FMT_PRINT("[CALLSTACK] %s\n",vec_[i]->c_str());	
+		}
+	}
+}
+
 //static initialize
 size_t Verifier::ss_deq_len=0;
 address_t Verifier::unit_size_=0;
@@ -19,6 +36,7 @@ Verifier::~Verifier()
 	delete internal_lock_;
 	delete verify_lock_;
 	delete filter_;
+	delete mem_bug_;
 	//clear vector clock
 	for(ThreadVectorClockMap::iterator iter=thd_vc_map_.begin();
 		iter!=thd_vc_map_.end();iter++) {
@@ -61,6 +79,9 @@ Verifier::~Verifier()
 		if(iter->second)
 			ProcessFree(iter->second);
 	}
+	for(ThreadCallStackTable::iterator iter=thd_callstack_table_.begin();
+		iter!=thd_callstack_table_.end();iter++)
+		delete iter->second;
 }
 
 bool Verifier::Enabled()
@@ -77,6 +98,12 @@ void Verifier::Register()
 		" analysis","0");
 	knob_->RegisterBool("harmful_race_analysis","whether do the harmful race"
 		" analysis","0");
+	knob_->RegisterStr("null_ptr_deref","file name of the static information"
+		" about the null pointer dereference analysis","0");
+	knob_->RegisterStr("dangling_ptr","file name of the static information"
+		" about the dangling pointer analysis","0");
+	knob_->RegisterStr("buffer_overflow","file name of the static information"
+		" about the buffer index","0");
 }
 
 void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
@@ -93,6 +120,8 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	desc_.SetHookPthreadFunc();
 	desc_.SetHookMallocFunc();
 	desc_.SetHookAtomicInst();
+	desc_.SetHookCallReturn();
+	desc_.SetHookMainFunc();
 	//max length of the snapshot vector
 	ss_deq_len=knob_->ValueInt("ss_deq_len");
 	if(ss_deq_len<=0)
@@ -103,7 +132,7 @@ void Verifier::Setup(Mutex *internal_lock,Mutex *verify_lock,RaceDB *race_db,
 	if(knob_->ValueBool("harmful_race_analysis")) {
 		SET_HARMFUL_RACE_ANALYSIS(flags_);
 		mem_bug_=new MemBug(knob_);
-		mem_bug_->Register();
+		//mem_bug_->Register();
 		mem_bug_->Setup();
 	}
 }
@@ -114,10 +143,14 @@ void Verifier::ImageLoad(Image *image,address_t low_addr,address_t high_addr,
 	DEBUG_ASSERT(low_addr && high_addr && high_addr>low_addr);
 	if(data_start) {
 		DEBUG_ASSERT(data_size);
+		if(mem_bug_)
+			mem_bug_->AddGlobalRegion(data_start,data_size);
 		AllocAddrRegion(data_start,data_size);
 	}
 	if(bss_start) {
 		DEBUG_ASSERT(bss_size);
+		if(mem_bug_)
+			mem_bug_->AddGlobalRegion(bss_start,bss_size);
 		AllocAddrRegion(bss_start,bss_size);
 	}
 }
@@ -137,7 +170,10 @@ void Verifier::ThreadStart(thread_t curr_thd_id,thread_t parent_thd_id)
 	// PinSemaphore *pin_sema=new PinSemaphore;
 	SysSemaphore *sys_sema=new SysSemaphore(0);
 	VectorClock *curr_vc=new VectorClock;
+	CallStack *callstack=new CallStack;
+
 	ScopedLock lock(internal_lock_);
+	thd_callstack_table_[curr_thd_id]=callstack;
 	//thread vector clock
 	curr_vc->Increment(curr_thd_id);
 	//not the main thread
@@ -201,6 +237,23 @@ void Verifier::AfterPthreadJoin(thread_t curr_thd_id,timestamp_t curr_thd_clk,
 void Verifier::AfterPthreadCreate(thread_t curr_thd_id,timestamp_t curr_thd_clk,
   	Inst *inst,thread_t child_thd_id)
 { }
+
+void Verifier::BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+    Inst *inst,std::string *funcname,address_t target)
+{
+	CallStack *callstack=thd_callstack_table_[curr_thd_id];
+	if(callstack->Full())
+		callstack->PopFront();
+	callstack->Push(funcname);
+}
+
+void Verifier::BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
+	Inst *inst,std::string *funcname,address_t target)
+{
+	CallStack *callstack=thd_callstack_table_[curr_thd_id];
+	if(!callstack->Empty())
+		callstack->PopBack();
+}
 
 void Verifier::AfterMalloc(thread_t curr_thd_id, timestamp_t curr_thd_clk,
     Inst *inst, size_t size, address_t addr)
@@ -954,6 +1007,7 @@ void Verifier::HandleRace(std::map<thread_t,uint8> &pp_thd_map,thread_t curr_thd
 
 	//
 	if(HARMFUL_THREAD(pp_thd_map[curr_thd_id])) {
+		INFO_PRINT("++++++++++++++\n");
 		WakeUpPostponeThreadSet(pp_thds);
 		PostponeThread(curr_thd_id);
 		return ;
@@ -991,7 +1045,7 @@ void Verifier::KeepupThread(thread_t curr_thd_id)
 void Verifier::PostponeThread(thread_t curr_thd_id)
 {
 // INFO_FMT_PRINT("=================postpone thread:[%lx]===================\n",curr_thd_id);
-//INFO_FMT_PRINT("=================avail_thd_set_ size:[%ld]===================\n",avail_thd_set_.size());
+// INFO_FMT_PRINT("=================avail_thd_set_ size:[%ld]===================\n",avail_thd_set_.size());
 	InternalLock();
 	//current thread is the only available thread, others may be blocked by some sync
 	//operations, we should not postpone it
@@ -1159,7 +1213,7 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
 						if(hrm_thd_id!=0) {
 							SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
-							INFO_PRINT("============harmful race=============\n");
+							INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
 						}
 						//add race to race db
 						ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
@@ -1178,7 +1232,7 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 								meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
 							if(hrm_thd_id!=0) {
 								SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
-								INFO_PRINT("============harmful race=============\n");
+								INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
 							}
 							//add race to race db
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
@@ -1220,9 +1274,10 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							PrintDebugRaceInfo(meta,race_type,iter->first,meta_ss->inst,
 								curr_thd_id,inst);
 							//harmful race
-							if(ProcessHarmfulRace(meta,iter->first,meta_ss->inst,
-								meta_ss->type,curr_thd_id,inst,type))
-								INFO_PRINT("============harmful race=============\n");
+							thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,meta_ss->inst,
+								meta_ss->type,curr_thd_id,inst,type);
+							if(hrm_thd_id!=0)
+								INFO_FMT_PRINT("============historical harmful race thd_id:[%lx]\n",hrm_thd_id);
 							
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
@@ -1316,8 +1371,10 @@ void Verifier::PrintDebugRaceInfo(Meta *meta,RaceType race_type,thread_t t1,
 	DEBUG_FMT_PRINT_SAFE("  addr = 0x%lx\n",meta->addr);
 	DEBUG_FMT_PRINT_SAFE("  first thread = [%lx] , inst = [%s]\n",t1,
 		i1->ToString().c_str());
+	thd_callstack_table_[t1]->PrintCallStack();
 	DEBUG_FMT_PRINT_SAFE("  second thread = [%lx] , inst = [%s]\n",t2,
 		i2->ToString().c_str());
+	thd_callstack_table_[t2]->PrintCallStack();
 	DEBUG_FMT_PRINT_SAFE("%s%s\n",SEPARATOR,SEPARATOR);
 }
 

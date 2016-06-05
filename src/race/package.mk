@@ -38,7 +38,6 @@ race_profiler_objs := \
   race/membug.o \
   race/verifier.o \
   race/verifier_ml.o \
-  race/parallel_verifier_ml.o \
   race/profiler.o \
   race/profiler_main.o \
   race/race.o \

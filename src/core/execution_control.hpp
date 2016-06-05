@@ -155,7 +155,7 @@
 			PushEventBufferToDetectionDeque(iter->first,buff);					\
 		buff->Push(event);														\
 	} 																			\
-	} while(0)																
+	} while(0)													
 
 #define DISTRIBUTE_NONMEM_EVENT(Name,...) do {									\
 	thread_t thd_id=PIN_ThreadId();												\
@@ -176,17 +176,15 @@
 		while(!pre_event_deq_.empty()) {										\
 			EventBase *pre_event=pre_event_deq_.front();						\
 			pre_event_deq_.pop_front();											\
-			pre_event->decrease_ref();											\
+			pre_event->set_ref(GetParallelDetectorNumber());					\
 			for(EventDequeTable::iterator iter=thd_deq_table_.begin();			\
 				iter!=thd_deq_table_.end();iter++) {							\
-				pre_event->increase_ref();										\
 				PushEventToDetectionDeque(iter->first,pre_event);				\
 			} 																	\
 		}																		\
-		event->decrease_ref();													\
+		event->set_ref(GetParallelDetectorNumber());							\
 		for(EventDequeTable::iterator iter=thd_deq_table_.begin();				\
 			iter!=thd_deq_table_.end();iter++) {								\
-			event->increase_ref();												\
 			PushEventToDetectionDeque(iter->first,event);						\
 		} 																		\
 	}																			\
@@ -267,10 +265,12 @@ protected:
                                     address_t addr);
   	virtual void HandleAfterAtomicInst(THREADID tid, Inst *inst, OPCODE opcode,
                                     address_t addr);
-  	virtual void HandleBeforeCall(THREADID tid, Inst *inst, address_t target);
+  	virtual void HandleBeforeCall(THREADID tid, Inst *inst, std::string *funcname,
+  		address_t target);
   	virtual void HandleAfterCall(THREADID tid, Inst *inst, address_t target,
                                address_t ret);
-  	virtual void HandleBeforeReturn(THREADID tid, Inst *inst, address_t target);
+  	virtual void HandleBeforeReturn(THREADID tid, Inst *inst, std::string *funcname,
+  		address_t target);
  	virtual void HandleAfterReturn(THREADID tid, Inst *inst, address_t target);
 
  	//before and after the wrapper function handler
@@ -336,6 +336,7 @@ protected:
  	EventDequeTable thd_deq_table_;
  	EventDequeLockTable thd_deqlk_table_;
 
+ 	std::map<RTN,std::string> rtn_funcname_map_;
  	std::set<thread_t> vrf_thd_set_;
  	static ExecutionControl *ctrl_;
 
@@ -373,10 +374,12 @@ protected:
  	static void __BeforeAtomicInst(THREADID tid, Inst *inst, UINT32 opcode,
                                  ADDRINT addr);
   	static void __AfterAtomicInst(THREADID tid, Inst *inst, UINT32 opcode);
-  	static void __BeforeCall(THREADID tid, Inst *inst, ADDRINT target);
+  	static void __BeforeCall(THREADID tid, Inst *inst, std::string *funcname,
+  		ADDRINT target);
   	static void __AfterCall(THREADID tid, Inst *inst, ADDRINT target,
                           ADDRINT ret);
-  	static void __BeforeReturn(THREADID tid, Inst *inst, ADDRINT target);
+  	static void __BeforeReturn(THREADID tid, Inst *inst, std::string *funcname,
+  		ADDRINT target);
   	static void __AfterReturn(THREADID tid, Inst *inst, ADDRINT target);
 
   	DISALLOW_COPY_CONSTRUCTORS(ExecutionControl);

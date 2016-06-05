@@ -58,14 +58,14 @@ void Profiler::HandlePreSetup()
 	// verifier_sl_analyzer_=new VerifierSl();
 	// verifier_sl_analyzer_->Register();
 
-	// verifier_ml_analyzer_=new VerifierMl();
-	// verifier_ml_analyzer_->Register();
+	verifier_ml_analyzer_=new VerifierMl();
+	verifier_ml_analyzer_->Register();
 
 	// pre_group_analyzer_=new PreGroup();
 	// pre_group_analyzer_->Register();	
 
-	prl_vrf_ml_analyzer_=new ParallelVerifierMl();
-	prl_vrf_ml_analyzer_->Register();
+	// prl_vrf_ml_analyzer_=new ParallelVerifierMl();
+	// prl_vrf_ml_analyzer_->Register();
 	//==============================end============================	
 }
 
@@ -156,12 +156,12 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(verifier_sl_analyzer_);
 	// }
 
-	// if(verifier_ml_analyzer_->Enabled()) {
-	// 	LoadPStmts();
-	// 	verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
-	// 		race_db_,prace_db_);
-	// 	AddAnalyzer(verifier_ml_analyzer_);
-	// }
+	if(verifier_ml_analyzer_->Enabled()) {
+		LoadPStmts();
+		verifier_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
+			race_db_,prace_db_);
+		AddAnalyzer(verifier_ml_analyzer_);
+	}
 
 	// if(pre_group_analyzer_->Enabled()) {
 	// 	LoadPStmts2();
@@ -169,15 +169,15 @@ void Profiler::HandlePostSetup()
 	// 	AddAnalyzer(pre_group_analyzer_);
 	// }
 
-	if(prl_vrf_ml_analyzer_->Enabled()) {
-		LoadPStmts();
-		prl_vrf_ml_analyzer_->SetTlsKey(app_thd_key);
-		prl_vrf_ml_analyzer_->SetParallelVerifierNumber(knob_->ValueInt(
-			"parallel_verifier_number"));
-		prl_vrf_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
-			race_db_,prace_db_);
-		AddAnalyzer(prl_vrf_ml_analyzer_);
-	}
+	// if(prl_vrf_ml_analyzer_->Enabled()) {
+	// 	LoadPStmts();
+	// 	prl_vrf_ml_analyzer_->SetTlsKey(app_thd_key);
+	// 	prl_vrf_ml_analyzer_->SetParallelVerifierNumber(knob_->ValueInt(
+	// 		"parallel_verifier_number"));
+	// 	prl_vrf_ml_analyzer_->Setup(CreateMutex(),CreateMutex(),
+	// 		race_db_,prace_db_);
+	// 	AddAnalyzer(prl_vrf_ml_analyzer_);
+	// }
 	//==============================end============================
 }
 
@@ -239,15 +239,15 @@ void Profiler::HandleProgramExit()
 	// delete verifier_sl_analyzer_;
 	// delete prace_db_;
 
-	// delete verifier_ml_analyzer_;
-	// delete prace_db_;
+	delete verifier_ml_analyzer_;
+	delete prace_db_;
 	
 	// pre_group_analyzer_->Export();
 	// delete pre_group_analyzer_;
 	// delete prace_db_;
 
-	delete prl_vrf_ml_analyzer_;
-	delete prace_db_;
+	// delete prl_vrf_ml_analyzer_;
+	// delete prace_db_;
 	//==============================end============================	
 
 	//======================parallel detection=====================
@@ -289,9 +289,9 @@ void Profiler::HandleCreateDetectionThread(thread_t thd_id)
 	// 			goto fini;
 	// 		}
 	// 	}
-	// 	fini:
-	// 		if(IsProcessExiting() && DetectionDequeEmpty(thd_id))
-	// 			break;
+	// fini:
+	// 	if(IsProcessExiting() && DetectionDequeEmpty(thd_id))
+	// 		break;
 	// }
 	// delete dtc;
 	// ATOMIC_ADD_AND_FETCH(&exit_num_,1);
@@ -310,53 +310,53 @@ void Profiler::HandleCreateVerificationThread(thread_t thd_id)
 
 void Profiler::StartWaitVerification()
 {
-	while(true) {
-		ParallelVerifierMl::VerifyRequest *req=prl_vrf_ml_analyzer_->
-			GetVerifyRequest();
-		if(req==NULL)
-			goto fini;
-		else {
-			//after each wait verification, a historical detection request
-			//will be sent to the corresponding thread
-			prl_vrf_ml_analyzer_->ProcessReadOrWrite(req);
-			//after processing the request
-			prl_vrf_ml_analyzer_->PopVerifyRequest();
-			prl_vrf_ml_analyzer_->ClearVerifyRequest(req);
-		}
-	fini:
-		if(IsProcessExiting() && prl_vrf_ml_analyzer_->VerifyRequestQueueEmpty())
-			break;
-	}
-	ExitThread(0);
+	// while(true) {
+	// 	ParallelVerifierMl::VerifyRequest *req=prl_vrf_ml_analyzer_->
+	// 		GetVerifyRequest();
+	// 	if(req==NULL)
+	// 		goto fini;
+	// 	else {
+	// 		//after each wait verification, a historical detection request
+	// 		//will be sent to the corresponding thread
+	// 		prl_vrf_ml_analyzer_->ProcessReadOrWrite(req);
+	// 		//after processing the request
+	// 		prl_vrf_ml_analyzer_->PopVerifyRequest();
+	// 		prl_vrf_ml_analyzer_->ClearVerifyRequest(req);
+	// 	}
+	// fini:
+	// 	if(IsProcessExiting() && prl_vrf_ml_analyzer_->VerifyRequestQueueEmpty())
+	// 		break;
+	// }
+	// ExitThread(0);
 }
 
 void Profiler::StartHistoryDetection(thread_t thd_id)
 {
-	prl_vrf_ml_analyzer_->CreateHtyDtcRequestQueue(thd_id);
-	while(true) {
-		ParallelVerifierMl::HtyDtcRequest *req=prl_vrf_ml_analyzer_->
-			PopHtyDtcRequest(thd_id);
-		if(req==NULL) {
-			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
-			goto fini;
-		}
-		if(prl_vrf_ml_analyzer_->InvalidHtyDtcRequest(req)) {
-			LockKernel();
-			prl_vrf_ml_analyzer_->ProcessInvalidHtyDtcRequest(req);
-			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
-			UnlockKernel();
-			goto fini;
-		}
-		else {
-			prl_vrf_ml_analyzer_->HistoryDetection(req);
-			//after processing the request
-			prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
-		}
-	fini:
-		if(IsProcessExiting() && prl_vrf_ml_analyzer_->HtyDtcRequestQueueEmpty(thd_id))
-			break;
-	}
-	ExitThread(0);
+	// prl_vrf_ml_analyzer_->CreateHtyDtcRequestQueue(thd_id);
+	// while(true) {
+	// 	ParallelVerifierMl::HtyDtcRequest *req=prl_vrf_ml_analyzer_->
+	// 		PopHtyDtcRequest(thd_id);
+	// 	if(req==NULL) {
+	// 		prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
+	// 		goto fini;
+	// 	}
+	// 	if(prl_vrf_ml_analyzer_->InvalidHtyDtcRequest(req)) {
+	// 		LockKernel();
+	// 		prl_vrf_ml_analyzer_->ProcessInvalidHtyDtcRequest(req);
+	// 		prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
+	// 		UnlockKernel();
+	// 		goto fini;
+	// 	}
+	// 	else {
+	// 		prl_vrf_ml_analyzer_->HistoryDetection(req);
+	// 		//after processing the request
+	// 		prl_vrf_ml_analyzer_->ClearHtyDtcRequest(req);
+	// 	}
+	// fini:
+	// 	if(IsProcessExiting() && prl_vrf_ml_analyzer_->HtyDtcRequestQueueEmpty(thd_id))
+	// 		break;
+	// }
+	// ExitThread(0);
 }
 
 void Profiler::LoadPStmts()

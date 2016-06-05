@@ -89,14 +89,14 @@ public:
   EVENT_HANDLE(AfterPthreadJoin,4);
   //call-return
   virtual void BeforeCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-    Inst *inst,address_t target);
-  EVENT_HANDLE(BeforeCall,4);
+    Inst *inst,std::string *funcname,address_t target);
+  EVENT_HANDLE(BeforeCall,5);
   virtual void AfterCall(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target,address_t ret);
   EVENT_HANDLE(AfterCall,5);
   virtual void BeforeReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
-    Inst *inst,address_t target);
-  EVENT_HANDLE(BeforeReturn,4);
+    Inst *inst,std::string *funcname,address_t target);
+  EVENT_HANDLE(BeforeReturn,5);
   virtual void AfterReturn(thread_t curr_thd_id,timestamp_t curr_thd_clk,
     Inst *inst,address_t target);
   EVENT_HANDLE(AfterReturn,4);

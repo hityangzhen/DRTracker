@@ -15,11 +15,13 @@ namespace race
 class PStmt
 {
 public:
-	PStmt(std::string fn,int l):file_name_(fn),line_(l) {}
-	PStmt(const char *fn,const char *l):file_name_(fn),line_(atoi(l)) {}
+	PStmt(std::string fn,int l):file_name_(fn),line_(l),visited(false) {}
+	PStmt(const char *fn,const char *l):file_name_(fn),line_(atoi(l)),
+		visited(false) {}
 	virtual ~PStmt() {}
 	std::string file_name_;
 	int line_;
+	volatile bool visited;
 };
 
 class SortedPStmt:public PStmt {
@@ -113,6 +115,17 @@ public:
 		if(pstmt_map_.find(second_pstmt)==pstmt_map_.end())
 			pstmt_map_[second_pstmt]=new PRlvStmtSet;
 		pstmt_map_[second_pstmt]->insert(first_pstmt);
+	}
+
+	void SecondPotentialStatementSet(PStmt *second_pstmt,std::set<PStmt *> &first_pstmts) {
+		if(pstmt_map_.find(second_pstmt)==pstmt_map_.end())
+			return ;
+		PRlvStmtSet *prlvstmt_set=pstmt_map_[second_pstmt];
+		for(PRlvStmtSet::iterator iter=prlvstmt_set->begin();iter!=prlvstmt_set->end();
+			iter++) {
+			if((*iter)->visited)
+				first_pstmts.insert(*iter);
+		}
 	}
 
 	// void BuildVerifiedRelationMapping(PStmt *first_pstmt,PStmt *second_pstmt) {

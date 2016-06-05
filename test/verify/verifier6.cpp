@@ -15,7 +15,7 @@ void* foo1(void *)
 {
 	pthread_rwlock_rdlock(&rwlock1);
 	pthread_rwlock_rdlock(&rwlock2);
-	pthread_rwlock_wrlock(&rwlock3);
+	pthread_rwlock_rdlock(&rwlock3);
 
 	*tmp=4;
 	
