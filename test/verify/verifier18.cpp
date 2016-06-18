@@ -4,18 +4,22 @@
 /* Null pointer deference memory bug */
 int *tmp;
 
-void *thread1(void *)
+void *func1()
 {
 	tmp=NULL;
 	return NULL;
 }
 
-void *thread2(void *)
+void *func2()
 {
 	sleep(1);
 	std::cout<<*tmp<<std::endl;
 	return NULL;
 }
+
+void *thread1(void *) { return func1(); }
+
+void *thread2(void *) { return func2(); }
 
 void threadCretator()
 {

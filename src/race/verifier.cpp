@@ -10,7 +10,7 @@ namespace race
 
 void CallStack::PrintCallStack() 
 {
-	INFO_FMT_PRINT("==============bgn_idx:[%d],end_idx[%d]=============\n",bgn_idx_,end_idx_);
+	// INFO_FMT_PRINT("==============bgn_idx:[%d],end_idx[%d]=============\n",bgn_idx_,end_idx_);
 	if(bgn_idx_!=end_idx_) {
 		if(bgn_idx_<end_idx_)
 			for(int i=bgn_idx_;i<end_idx_;i++)
@@ -1007,7 +1007,6 @@ void Verifier::HandleRace(std::map<thread_t,uint8> &pp_thd_map,thread_t curr_thd
 
 	//
 	if(HARMFUL_THREAD(pp_thd_map[curr_thd_id])) {
-		INFO_PRINT("++++++++++++++\n");
 		WakeUpPostponeThreadSet(pp_thds);
 		PostponeThread(curr_thd_id);
 		return ;
@@ -1200,6 +1199,15 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 						flag=true;
 						res=RACY;
 						tmp_pp_thds.insert(iter->first);
+
+						//harmful data race
+						thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,
+							meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
+						if(hrm_thd_id!=0) {
+							SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
+							// INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
+						}
+
 						if(meta_ss->type==RACE_EVENT_WRITE) {
 							PrintDebugRaceInfo(meta,WRITETOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
@@ -1207,13 +1215,6 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 						else {
 							PrintDebugRaceInfo(meta,READTOWRITE,iter->first,
 								meta_ss->inst,curr_thd_id,inst);
-						}
-						//harmful data race
-						thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,
-							meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
-						if(hrm_thd_id!=0) {
-							SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
-							INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
 						}
 						//add race to race db
 						ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
@@ -1225,15 +1226,18 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							flag=true;
 							res=RACY;
 							tmp_pp_thds.insert(iter->first);
-							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
-								meta_ss->inst,curr_thd_id,inst);
+							
 							//harmful data race
 							thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,
 								meta_ss->inst,meta_ss->type,curr_thd_id,inst,type);
 							if(hrm_thd_id!=0) {
 								SET_HARMFUL_THREAD(pp_thd_map[hrm_thd_id]);
-								INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
+								// INFO_FMT_PRINT("============wait harmful race thd_id:[%lx]\n",hrm_thd_id);
 							}
+
+							PrintDebugRaceInfo(meta,WRITETOREAD,iter->first,
+								meta_ss->inst,curr_thd_id,inst);
+							
 							//add race to race db
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);
@@ -1271,13 +1275,15 @@ Verifier::WaitVerificationAndHistoryDetection(PStmt *first_pstmt,
 							type);
 						if(race_type==WRITETOWRITE || race_type==READTOWRITE ||
 							race_type==WRITETOREAD) {
-							PrintDebugRaceInfo(meta,race_type,iter->first,meta_ss->inst,
-								curr_thd_id,inst);
+
 							//harmful race
 							thread_t hrm_thd_id=ProcessHarmfulRace(meta,iter->first,meta_ss->inst,
 								meta_ss->type,curr_thd_id,inst,type);
 							if(hrm_thd_id!=0)
-								INFO_FMT_PRINT("============historical harmful race thd_id:[%lx]\n",hrm_thd_id);
+								;//INFO_FMT_PRINT("============historical harmful race thd_id:[%lx]\n",hrm_thd_id);
+							
+							PrintDebugRaceInfo(meta,race_type,iter->first,meta_ss->inst,
+								curr_thd_id,inst);
 							
 							ReportRace(meta,iter->first,meta_ss->inst,meta_ss->type,
 								curr_thd_id,inst,type);

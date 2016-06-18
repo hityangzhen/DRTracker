@@ -318,28 +318,39 @@ thread_t MemBug::ProcessHarmfulRace(MemMeta *tmp_mem_meta,MemAccess *tmp_mem_acc
 		(tmp_mem_acc1->type==RACE_EVENT_READ && tmp_mem_acc2->type==RACE_EVENT_WRITE)) {
 		// Null pointer dereference do not need meta
 		if(null_ptr_deref_ && null_ptr_deref_->Harmful(tmp_mem_acc1,tmp_mem_acc2)) {
+			INFO_PRINT("Potential harmful data race : [MEMORY ERROR] "
+				"[null pointer deference]\n");
 			return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
 				tmp_mem_acc2->thd_id:tmp_mem_acc1->thd_id;
 		}
 		// Always make the read access go through laster.
 		if(uninit_read_) {
 			MemMeta *mem_meta=new MemMeta(tmp_mem_meta->addr);
-			if(uninit_read_->Harmful(mem_meta,tmp_mem_acc1,tmp_mem_acc2))
+			if(uninit_read_->Harmful(mem_meta,tmp_mem_acc1,tmp_mem_acc2)) {
+				INFO_PRINT("Potential harmful data race : [MEMORY ERROR] "
+					"[uninitialized read]\n");
 				return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
 					tmp_mem_acc2->thd_id:tmp_mem_acc1->thd_id;
+			}
 		}
 		// Always make the `delete` operator go through later. 
 		if(dangling_ptr_) {
+			INFO_PRINT("Potential harmful data race : [MEMORY ERROR] "
+				"[dangling pointer access]\n");
 			return dangling_ptr_->Harmful(tmp_mem_acc1,tmp_mem_acc2);
 		}
 		// Always make the write changing the index go through later.
 		if(buffer_overflow_ && buffer_overflow_->Harmful(tmp_mem_acc1,tmp_mem_acc2)) {
+			INFO_PRINT("Potential harmful data race : [MEMORY ERROR] "
+				"[buffer overflow]\n");
 			return tmp_mem_acc1->type==RACE_EVENT_WRITE ? 
 				tmp_mem_acc1->thd_id:tmp_mem_acc2->thd_id;
 		}
 	} else if(tmp_mem_acc1->type==RACE_EVENT_WRITE && 
 		tmp_mem_acc2->type==RACE_EVENT_WRITE) {
 		if(dangling_ptr_) {
+			INFO_PRINT("Potential harmful data race : [MEMORY ERROR] "
+				"[dangling pointer access]\n");
 			// Always make the `delete` operator go through later. 
 			return dangling_ptr_->Harmful(tmp_mem_acc1,tmp_mem_acc2);
 		}

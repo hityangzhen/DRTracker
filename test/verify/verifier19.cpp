@@ -8,19 +8,29 @@ struct obj {
 
 obj *ptr;
 
-void *thread1(void *)
+void *fun1()
 {
 	
 	std::cout<<*(ptr->a)<<std::endl;	
 	return NULL;
 }
 
-void *thread2(void *tmp)
+void *fun2(void *tmp)
 {
 	
 	sleep(1);
 	ptr->a=(int *)tmp;
 	return NULL;
+}
+
+void *thread1(void *)
+{
+	return fun1();
+}
+
+void *thread2(void *tmp)
+{
+	return fun2(tmp);
 }
 
 void threadCretator()
